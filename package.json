@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "faucet": "^0.0.1",
+    "ohm-js": "^0.12.3",
+    "tape": "^4.6.3",
+    "tape-catch": "^1.0.6"
+  }
+}

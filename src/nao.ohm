@@ -1,0 +1,186 @@
+NaoRules {
+	Program = SourceElement*
+	SourceElement
+	  = FuncDefinition
+		| GraphDefinition
+
+	FuncDefinition = #(func ws+ identifier) "{" nl* FuncBody "}" nl*
+	FuncBody = FuncElement*
+	FuncElement =
+      ( PlaceholderDeclaration
+      | OutputDeclaration
+      | ConstantDeclaration
+      | AttributeDeclaration
+      | NameableExpression
+      ) #sc
+
+	GraphDefinition = #(graph ws+ identifier) "{" nl* GraphBody "}" nl*
+	GraphBody = GraphElement*
+	GraphElement =
+			( PlaceholderDeclaration
+			| OutputDeclaration
+			| ConstantDeclaration
+			| NameableExpression
+			) #sc
+
+	InputGlyph = "->" | ">"
+	OutputGlyph = "<-" | "<"
+	AttributeGlyph = "@@" | "@"
+
+	ConstantDeclaration = const identifier TensorKind equal TensorLiteral
+
+	AttributeDeclaration = AttributeGlyph identifier AttributeType? (equal AttributeValue)?
+	AttributeType
+	  = FuncTypeLiteral
+	  | TensorKind
+	  | identifier
+	TensorKind = TensorShape TensorType
+	TensorShape
+	  = "?" -- unknown
+      | scalar -- scalar
+	  | "<" ListOfLookahead<(number | "?"), ",", ">"> ">" -- literal
+	TensorType =
+	  | float
+	  | double
+	  | int8
+	  | int16
+	  | int32
+	  | int64
+	  | uint8
+	  | uint16
+	  | string
+	  | bool
+	  | complex64
+	  | complex128
+	  | qint8
+	  | qint32
+	  | quint
+
+	PlaceholderDeclaration = InputGlyph identifier TensorKind
+	OutputDeclaration = OutputGlyph identifier (TensorKind equal ArgumentExpression)?
+	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
+
+	identifierStart = letter | "_"
+	identifierPart = alnum | "_"
+	identifier  (an identifierifier)
+	  = identifierStart identifierPart*
+
+	ListOfLookahead<elem, sep, la>
+	  = nonemptyListOfLookahead<elem, sep, la>
+	  | EmptyListOf<elem, sep>
+
+	nonemptyListEol<sep> = (sep (ws* nl ws*)+)
+	nonemptyListOfLookaheadEntry<elem, sep, la>
+	  = nl* elem ws* (sep ws* elem ws*)* (nonemptyListEol<sep> | &la)
+	nonemptyListOfLookahead<elem, sep, la>
+	  = nonemptyListOfLookaheadEntry<elem, sep, la>+
+
+	ws (some whitespace)
+	  = "\t"
+	  | "\x0B"	-- verticalTab
+	  | "\x0C"	-- formFeed
+	  | " "
+	  | "\u00A0"  -- noBreakSpace
+	  | "\uFEFF"  -- byteOrderMark
+	  | unicodeSpaceSeparator
+	unicodeSpaceSeparator = "\u2000".."\u200B" | "\u3000"
+
+	// A semicolon is "automatically inserted" if a newline or the end of the input stream is
+	// reached, or the offending token is "}".
+	// NOTE: Applications of this rule *must* appear in a lexical context -- either in the body of a
+	// lexical rule, or inside `#()`.
+	sc
+	  = spacesNoNL (nl+ | ~multiLineCommentNoNL multiLineComment | &"}") -- a
+      | space* (";" | end | nl+) (space | nl)* -- b
+
+	sourceCharacter = any
+
+	comment = multiLineComment | singleLineComment
+	multiLineComment = "/*" (~"*/" sourceCharacter)* "*/"
+	singleLineComment = "//" (~nl sourceCharacter)*
+
+	// Override Ohm's built-in definition of space.
+	space := ws | comment
+
+	nl = "\n"
+	multiLineCommentNoNL = "/*" (~("*/" | nl) sourceCharacter)* "*/"
+
+	// does not accept lineTerminators, not even implicit ones in a multiLineComment
+	spacesNoNL = (ws | singleLineComment | multiLineCommentNoNL)*
+
+	number  (a number)
+	  = (("+" | "-") ws*)? digit* "." digit+ "j"? -- fract
+	  | (("+" | "-") ws*)? digit+ "j"?            -- whole
+
+	qq (")
+	  = "\""
+	stringExpression (a string)
+	  = qq qq
+
+	NameableExpression = Expression #(ws+ "--" ws+ identifier)?
+	Expression
+		= SumExpression
+		| DivisionExpression
+		| #(invocationNamespace? identifier) "(" ListOfLookahead<ArgumentExpression, ",", ")"> ")" AttributeBlock? -- apply
+		| identifier -- reference
+	invocationNamespace = "tf" "."
+	SumExpression = ArgumentExpression "+" ArgumentExpression
+	DivisionExpression = ArgumentExpression "/" ArgumentExpression
+	ArgumentExpression =
+      | Expression
+      | TensorLiteral
+
+	AttributeBlock = "{" AttributeList<"}"> "}"
+	AttributeList<la> = ListOfLookahead<AttributeEntry, ",", la>
+	AttributeEntry = AttributeName ":" AttributeValue
+	AttributeName = identifier
+	AttributeValue
+	  = AttributeValueList
+	  | TensorLiteral
+	  | TensorShape
+      | identifier
+
+	TensorLiteral
+	  = number
+	  | "true"
+	  | "false"
+	  | stringExpression
+	  | "[" ListOfLookahead<TensorLiteral, ",", "]"> "]" -- arr
+
+	AttributeValueList = "[" ListOfLookahead<AttributeValueListEntry, ",", "]"> "]"
+	AttributeValueListEntry
+	  = TensorLiteral
+	  | TensorShape
+
+	type = "type"
+	FuncTypeLiteral = func "(" ListOfLookahead<FuncTypeLiteralEntry, ",", ")"> ")"
+	FuncTypeLiteralEntry
+	  = PlaceholderDeclaration
+	  | OutputTypeDeclaration
+	  | AttributeDeclaration
+
+
+	// Convenience rules for keywords
+	scalar = "scalar" ~identifierPart
+	float = "float" ~identifierPart
+	double = "double" ~identifierPart
+	int8 = "int8" ~identifierPart
+	int16 = "int16" ~identifierPart
+	int32 = "int32" ~identifierPart
+	int64 = "int64" ~identifierPart
+	uint8 = "uint8" ~identifierPart
+	uint16 = "uint16" ~identifierPart
+	string = "string" ~identifierPart
+	bool = "bool" ~identifierPart
+	complex64 = "complex64" ~identifierPart
+	complex128 = "complex128" ~identifierPart
+	qint8 = "qint8" ~identifierPart
+	qint32 = "qint32" ~identifierPart
+	quint = "quint" ~identifierPart
+	const = "const" ~identifierPart
+
+	graph = "graph" ~identifierPart
+	func = "func" ~identifierPart
+	var = "var" ~identifierPart
+	equal = "=" ~identifierPart
+}

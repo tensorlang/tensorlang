@@ -1,0 +1,15 @@
+func identity {
+  -> x scalar float
+  <- x
+}
+
+graph testIdentity_result {
+  const x scalar float = 1
+}
+
+graph testIdentity {
+  const x scalar float = 1
+  <- x
+
+  tf.Assert(tf.equal(x, identity(x)), [""])
+}
