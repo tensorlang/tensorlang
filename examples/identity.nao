@@ -1,15 +1,41 @@
 func identity {
-  -> x scalar float
-  <- x
-}
-
-graph testIdentity_result {
-  const x scalar float = 1
+  → x scalar float
+  ← x
 }
 
 graph testIdentity {
-  const x scalar float = 1
-  <- x
-
-  tf.Assert(tf.equal(x, identity(x)), [""])
+  const x scalar bool = true
+  tf.Assert(x, [""])
 }
+
+// graph testIdentity {
+//   const x scalar float = 1
+//   tf.Assert(tf.equal(x, identity(x)), [""])
+// }
+
+// graph testIdentity_result {
+//   const x scalar float = 1
+// }
+//
+// graph testIdentity {
+//   const x scalar float = 1
+//   ← x
+//
+//   tf.Assert(tf.equal(x, identity(x)), [""])
+// }
+
+// graph testIdentity_result {
+//   1 → x const scalar float
+// }
+//
+// func identity {
+//   → x scalar float
+//   ← x
+// }
+//
+// graph testIdentity {
+//   1 → x const scalar float
+//   testIdentity ← x
+//
+//   tf.Assert(x == identity(x), [""])
+// }

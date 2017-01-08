@@ -7,7 +7,7 @@ NaoRules {
 	FuncDefinition = #(func ws+ identifier) "{" nl* FuncBody "}" nl*
 	FuncBody = FuncElement*
 	FuncElement =
-      ( PlaceholderDeclaration
+      ( InputDeclaration
       | OutputDeclaration
       | ConstantDeclaration
       | AttributeDeclaration
@@ -17,14 +17,14 @@ NaoRules {
 	GraphDefinition = #(graph ws+ identifier) "{" nl* GraphBody "}" nl*
 	GraphBody = GraphElement*
 	GraphElement =
-			( PlaceholderDeclaration
+			( InputDeclaration
 			| OutputDeclaration
 			| ConstantDeclaration
 			| NameableExpression
 			) #sc
 
-	InputGlyph = "->" | ">"
-	OutputGlyph = "<-" | "<"
+	InputGlyph = "->" | "\u2192"
+	OutputGlyph = "<-" | "\u2190"
 	AttributeGlyph = "@@" | "@"
 
 	ConstantDeclaration = const identifier TensorKind equal TensorLiteral
@@ -56,7 +56,7 @@ NaoRules {
 	  | qint32
 	  | quint
 
-	PlaceholderDeclaration = InputGlyph identifier TensorKind
+	InputDeclaration = InputGlyph identifier TensorKind
 	OutputDeclaration = OutputGlyph identifier (TensorKind equal ArgumentExpression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
 
@@ -127,7 +127,7 @@ NaoRules {
 	SumExpression = ArgumentExpression "+" ArgumentExpression
 	DivisionExpression = ArgumentExpression "/" ArgumentExpression
 	ArgumentExpression =
-      | Expression
+      | NameableExpression
       | TensorLiteral
 
 	AttributeBlock = "{" AttributeList<"}"> "}"
@@ -142,8 +142,8 @@ NaoRules {
 
 	TensorLiteral
 	  = number
-	  | "true"
-	  | "false"
+	  | "true"  -- true
+	  | "false" -- false
 	  | stringExpression
 	  | "[" ListOfLookahead<TensorLiteral, ",", "]"> "]" -- arr
 
@@ -155,7 +155,7 @@ NaoRules {
 	type = "type"
 	FuncTypeLiteral = func "(" ListOfLookahead<FuncTypeLiteralEntry, ",", ")"> ")"
 	FuncTypeLiteralEntry
-	  = PlaceholderDeclaration
+	  = InputDeclaration
 	  | OutputTypeDeclaration
 	  | AttributeDeclaration
 

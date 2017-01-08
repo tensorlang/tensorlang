@@ -19,6 +19,23 @@ pp = pprint.PrettyPrinter(indent=2, stream=sys.stderr)
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
+class Context:
+  def __init__(self):
+    self.locals = {}
+    self.aliases = {}
+
+  def set_alias(self, name, retvals):
+    self.aliases[name] = retvals
+
+  def get_alias(self, name):
+    return self.aliases[name]
+
+  def set_local(self, name, value):
+    self.locals[name] = value
+
+  def get_local(self, name):
+    return self.locals[name]
+
 class TopLevel:
   TYPES = {
 	  "float": tf.float32,
@@ -41,19 +58,7 @@ class TopLevel:
   def __init__(self):
     self.functions = {}
 
-  def _tensor(self, ctx, *values):
-    return values
-
-  def _named_constant(self, ctx, name, shape, dtype, value):
-    op = tf.constant(value, shape=shape, dtype=dtype, name=name)
-    ctx[name] = op
-    return op
-
-  def _named_placeholder(self, ctx, name, shape, dtype):
-    op = tf.placeholder(dtype, shape=shape, name=name)
-    ctx[name] = op
-    return op
-
+  # "primitive" values
   def _sf_type(self, ctx, name):
     return TopLevel.TYPES[name]
 
@@ -66,51 +71,84 @@ class TopLevel:
   def _sf_fraction(self, ctx, decimal):
     return float(decimal)
 
+  def _tensor(self, ctx, *values):
+    return values
+
+  # remembering and referring back to values
+  def _named_constant(self, ctx, name, shape, dtype, value):
+    op = tf.constant(value, shape=shape, dtype=dtype, name=name)
+    ctx[name] = op
+    return op
+
+  def _named_placeholder(self, ctx, name, shape, dtype):
+    op = tf.placeholder(dtype, shape=shape, name=name)
+    ctx[name] = op
+    return op
+
+  # applying a function
+  def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
+    # attrs = self.visit(ctx, attrs_expr)
+    args = [self.visit(ctx, expr) for expr in arg_exprs]
+
+    if ns_name != None:
+      # For now assume ns is tf if non-None.
+      ns = tf
+      # How to handle multiple return values?
+      return getattr(ns, fn_name)(*args)
+    else:
+      function = self.functions[fn_name]
+      with tf.variable_scope(name):
+        arg_specs, retval_specs, *body = function[1:]
+        # preload locals with references to input operations
+        new_ctx = {}
+        for arg_spec, arg in zip(args, arg_specs):
+          arg_name = arg_spec[0]
+          new_ctx[arg_name] = arg
+
+        # Need to visit expressions
+        for expr in body:
+          self.visit(new_ctx, expr)
+
+        # For now we only use the first retval
+        returned = []
+        for retval_spec, retval in zip(retvals, retval_specs):
+          returned.append((retval_argname, new_ctx[retval_argname]))
+
+        ctx[name] = returned[0][1]
+        return returned[0][1]
+
   def _sf_local(self, ctx, name):
     return ctx[name];
 
+
+  # generating graphs directly
   def _sf_graph(self, ctx, name, *exprs):
     with tf.variable_scope(name):
-      emitted = []
+      retval_names = []
       local_ops = {}
-      with tf.variable_scope("impl"):
-        # Accumulate ops to emit.
+
+      with tf.variable_scope("_"):
         for expr in exprs:
-          if expr[0] == "_emit":
+          if expr[0] == "_retval":
             name = expr[1]
             subexpr = expr[2]
             op = self.visit(local_ops, subexpr)
             local_ops[name] = op
-            emitted.append(name)
+            retval_names.append(name)
           else:
             self.visit(local_ops, expr)
 
-      with tf.variable_scope("emit"):
-        for name in emitted:
-          tf.identity(local_ops[name], name=name)
+      for retval_name in retval_names:
+        op = local_ops[retval_name]
+        tf.identity(op, name=retval_name)
+
+
 
   def _sf_def_function(self, ctx, name, *rest):
     self.functions[name] = [name, *rest]
 
   def _sf_attrs(self, ctx):
     return {}
-
-  def _sf_apply(self, ctx, ns_name, fn_name, attrs_expr, *arg_exprs):
-    # attrs = self.visit(ctx, attrs_expr)
-    args = [self.visit(ctx, expr) for expr in arg_exprs]
-
-    if ns_name == None:
-      # For now assume ns is tf if non-None.
-      ns = tf
-      # How to handle multiple return values?
-      return getattr(ns, fn_name)(*args)
-    else:
-      function = this.functions[fn_name]
-      # Need to start new scope
-      # Need to preload locals with references to input operations
-      # Need to visit expressions
-      # Accumulate list of returned elements
-      # Assign returned elements to locals, if appropriate
 
   def visit(self, ctx, expr):
     if type(expr) == list:
