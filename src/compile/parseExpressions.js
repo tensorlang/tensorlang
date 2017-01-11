@@ -1,3 +1,5 @@
+/* @flow */
+
 const ohm = require('ohm-js');
 const fs = require('fs');
 
@@ -23,15 +25,13 @@ function createSemantics(grammar) {
           return acc ? cur : acc.concat(cur);
         });
       },
-      TensorLiteral_false: function(_) {
-        return ["_tensor", false];
-      },
-      TensorLiteral_true: function(_) {
-        return ["_tensor", true];
-      },
-      TensorLiteral_arr: function(_1, elems, _2) {
-        return ["_tensor"].concat(elems.asJson);
-      },
+
+      TensorKind: function(shape, type) { return ["kind", shape.asJson, type.asJson]; },
+      TensorShape_unknown: function(_) { return ["_sf_shape", null]; },
+      TensorShape_scalar: function(_) { return ["_sf_shape", []]; },
+      TensorShape_literal: function(_1, dims, _2) { return ["_sf_shape", dims.asJson]; },
+      TensorType: function(name) { return ["_sf_type", name.sourceString]; },
+
       number_whole: function(sign, _, digits, maybeImaginary) {
         // JavaScript and JSON don't support numbers with high enough
         // precision to use native types.
@@ -51,6 +51,30 @@ function createSemantics(grammar) {
         //   ] :
         return ["_sf_fraction", signStr + characteristic.sourceString + "." + mantissa.sourceString];
       },
+
+      ListLiteral: function(_1, elems, _2) {
+        return ["_sf_list"].concat(elems.asJson);
+      },
+
+      TensorLiteralElement_false: function(_) {
+        return false;
+      },
+      TensorLiteralElement_true: function(_) {
+        return true;
+      },
+      TensorLiteralElement_number: function(value) {
+        return value.asJson;
+      },
+      TensorLiteralElement_string: function(str) {
+        return str.asJson;
+      },
+      TensorLiteralElement_arr: function(_1, elems, _2) {
+        return ["_sf_list"].concat(elems.asJson);
+      },
+      TensorLiteral: function(child) {
+        return ["_named_tensor", null, null, null, child.asJson];
+      },
+
       FuncDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
         var retvals = [];
         var args = [];
@@ -62,13 +86,16 @@ function createSemantics(grammar) {
             return ["_sf_local", argName];
           }
 
-          if (expr[0] === "_retval") {
-            var sub = expr.slice(1);
-            retvals.push(sub);
-            return sub;
+          if (expr[0] === "__retval") {
+            var retName = expr[1];
+            var retVal = expr[2];
+            var subName = retVal[1];
+
+            retvals.push([retName, subName]);
+            return retVal;
           }
 
-          return sub;
+          return expr;
         });
 
         return ["_sf_def_function", name.asJson, args, retvals].concat(expressions);
@@ -79,7 +106,7 @@ function createSemantics(grammar) {
       GraphDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
         var emitted = 0;
         body.asJson.forEach(function(expr, ix, exprs) {
-          if (expr[0] === "_retval" && expr[1]) {
+          if (expr[0] === "__retval" && expr[1]) {
             expr[1] = "" + emitted++;
           }
         });
@@ -88,6 +115,9 @@ function createSemantics(grammar) {
       },
       GraphElement: function(decl, _) {
         return decl.asJson;
+      },
+      AfterDeclaration: function(_1, _2, _3, _4, _5, body, _6, _7) {
+        return ["__sf_after_leaves"].concat(body.asJson);
       },
       NameableExpression: function(child, _1, _2, _3, name) {
         var childExpr = child.asJson;
@@ -107,7 +137,6 @@ function createSemantics(grammar) {
         }
 
         return childExpr;
-
       },
       Expression_reference: function(name) {
         return ["_sf_local", name.sourceString];
@@ -122,31 +151,34 @@ function createSemantics(grammar) {
       InputDeclaration: function(_, name, kind) {
         return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
       },
-      ConstantDeclaration: function(_1, name, kind, _2, value) {
-        return ["_named_constant", name.asJson, kind.asJson[1], kind.asJson[2], value.asJson];
+      ConstantDeclaration: function(_1, name, kind, _2, tensorLiteral) {
+        var childExpr = tensorLiteral.asJson;
+        childExpr[1] = name.sourceString;
+        childExpr[2] = kind.asJson[1]; // shape
+        childExpr[3] = kind.asJson[2]; // dtype
+
+        return childExpr;
       },
       OutputDeclaration: function(_1, name, kind, _2, expr) {
-        return ["_retval", name[0] ? name[0].asJson : null, expr.asJson];
+        var child = expr.asJson[0];
+        if (child) {
+          child[1] = name.asJson;
+        }
+        return ["__retval", name.asJson, child || ["_sf_local", name.sourceString]];
       },
-      TensorKind: function(shape, type) { return ["kind", shape.asJson, type.asJson]; },
-      TensorShape_unknown: function(_) { return ["_sf_shape", null]; },
-      TensorShape_scalar: function(_) { return ["_sf_shape", []]; },
-      TensorShape_literal: function(_1, dims, _2) { return ["_sf_shape", dims.asJson]; },
-      TensorType: function(name) { return ["_sf_type", name.sourceString]; },
     }
   );
 
   return s;
 };
 
-var parseExpressions = function(source) {
+var parseExpressions = function(source: string) {
   var grammar = loadGrammar();
   var semantics = createSemantics(grammar);
 
   var m = grammar.match(source);
   if (m.failed()) {
-    callback(new Error(m.message), null);
-    return;
+    throw m.message;
   }
 
   return semantics(m).asJson;

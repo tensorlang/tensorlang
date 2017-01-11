@@ -1,4 +1,6 @@
-const parseExpressions = require('./compile/parse-expressions');
+/* @flow */
+
+const parseExpressions = require('./compile/parseExpressions.js');
 
 const fs = require('fs');
 const spawn = require('child_process').spawn;
@@ -8,8 +10,8 @@ const env = process.env;
 const CUDA_HOME = "/usr/local/cuda";
 const subprocessEnv = {
   "CUDA_HOME": CUDA_HOME,
-  "DYLD_LIBRARY_PATH": `${env.DYLD_LIBRARY_PATH}:${CUDA_HOME}/lib`,
-  "PATH": `${CUDA_HOME}/bin:${env.PATH}`,
+  "DYLD_LIBRARY_PATH": `${env['DYLD_LIBRARY_PATH'] || ''}:${CUDA_HOME}/lib`,
+  "PATH": `${CUDA_HOME}/bin:${env['PATH'] || ''}`,
 };
 
 var exitCodeToError = function(code) {
@@ -26,11 +28,12 @@ var spawnProcessWithStdin = function(env, cmd, args, stdinString, callback) {
 };
 
 var spawnProcessWithStdinCapturingStdout = function(env, cmd, args, stdinString, callback) {
-  var converter = new stream.Writable();
-  converter.data = []; // We'll store all the data inside this array
-  converter._write = function (chunk) {
-    this.data.push(chunk);
-  };
+  var data = []; // We'll store all the data inside this array
+  var converter = new stream.Writable({
+    write(chunk: Buffer, encoding: string, callback: (err: ?Error) => any) {
+      data.push(chunk);
+    }
+  });
 
   var process = spawn(cmd, args, {env: env, stdio: ['pipe', 'pipe', 2]});
   process.stdout.pipe(converter);
@@ -40,12 +43,21 @@ var spawnProcessWithStdinCapturingStdout = function(env, cmd, args, stdinString,
 
   process.on('end', function(code, signal) {
     // Create a buffer from all the received chunks
-    var b = Buffer.concat(converter.data);
+    var b = Buffer.concat(data);
     callback(exitCodeToError(code), b.toString());
   });
 };
 
-var compileString = function(source, callback) {
+type compileStringCallback = (err: null | Error, result: ?string) => any
+var compileString = function(source: string, callback: compileStringCallback) {
+  var expressions;
+  try {
+    expressions = parseExpressions(source);
+  } catch (e) {
+    callback(e);
+    return;
+  }
+
   spawnProcessWithStdinCapturingStdout(
     subprocessEnv,
     "../bin/python",
@@ -54,14 +66,23 @@ var compileString = function(source, callback) {
       "--input_json", "/dev/stdin",
       "--output_graph", "/dev/stdout",
     ],
-    JSON.stringify(parseExpressions(source)),
+    JSON.stringify(expressions),
     callback
   );
 };
 
-var compile = function(input, output, outputBinary, callback) {
+type compileCallback = (err: null | Error) => any
+var compile = function(input: string, output: string, outputBinary: boolean, callback: compileCallback) {
   // TODO(adamb) Don't do this synchronously
   var source = fs.readFileSync(input).toString();
+
+  var expressions;
+  try {
+    expressions = parseExpressions(source);
+  } catch (e) {
+    callback(e);
+    return;
+  }
 
   spawnProcessWithStdin(
     subprocessEnv,
@@ -72,7 +93,7 @@ var compile = function(input, output, outputBinary, callback) {
       "--output_graph", output,
       ...(outputBinary ? ["--output_binary"] : [])
     ],
-    JSON.stringify(parseExpressions(source)),
+    JSON.stringify(expressions),
     callback
   );
 };

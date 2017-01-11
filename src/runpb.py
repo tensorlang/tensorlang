@@ -9,6 +9,7 @@ from __future__ import print_function
 import argparse
 import json
 import pprint
+import re
 import sys
 
 import tensorflow as tf
@@ -34,23 +35,27 @@ def read_graph_def(path, binary):
 
   return graph_def
 
-def find_nodes_with_prefix(graph_def, prefix):
-  nodes = [n for n in graph_def.node if n.name.startswith(prefix)]
-  if len(nodes) == 0:
-    raise Exception("No nodes with prefix %s" % prefix)
+def find_nodes_with_pattern(graph_def, pattern):
+  node_matches = []
+  for n in graph_def.node:
+    m = pattern.match(n.name)
+    if m:
+      node_matches.append((n, m))
 
-  return nodes
+  if len(node_matches) == 0:
+    raise Exception("No nodes match pattern %s" % pattern)
 
-def find_outputs(graph_def, output_prefix):
-  names = [n.name for n in find_nodes_with_prefix(graph_def, output_prefix)]
+  return node_matches
 
-  ops = [name + ":0" for name in names]
-  output_names = [name[len(output_prefix):] for name in names]
+def find_results(graph_def, result_pattern):
+  node_matches = find_nodes_with_pattern(graph_def, result_pattern)
+  ops = [n.name + ":0" for n, m in node_matches]
+  result_names = [m.group(1) for n, m in node_matches]
 
-  return (names, ops)
+  return (result_names, ops)
 
-def run_graph(graph_def, output_prefix, feed_dict):
-  output_names, ops = find_outputs(graph_def, output_prefix)
+def run_graph(graph_def, result_pattern, feed_dict):
+  result_names, ops = find_results(graph_def, result_pattern)
 
   with tf.Session() as sess:
     ops = tf.import_graph_def(
@@ -60,9 +65,9 @@ def run_graph(graph_def, output_prefix, feed_dict):
     )
 
     tf.global_variables_initializer()
-    output_tensors = sess.run(fetches=ops, feed_dict=feed_dict)
+    result_tensors = sess.run(fetches=ops, feed_dict=feed_dict)
 
-    return dict(zip(output_names, output_tensors))
+    return dict(zip(result_names, result_tensors))
 
 def constants_as_dict(constants):
   d = {}
@@ -99,12 +104,12 @@ def dict_as_graph_def(constants_dict):
 
     return g.as_graph_def()
 
-def write_graph_def(graph_def, output_file, output_binary):
-  if output_binary:
-    with open(output_file, "wb") as f:
+def write_graph_def(graph_def, file, binary):
+  if binary:
+    with open(file, "wb") as f:
       f.write(graph_def.SerializeToString())
   else:
-    with open(output_file, "w") as f:
+    with open(file, "w") as f:
       data = text_format.MessageToString(graph_def)
       f.write(data)
 
@@ -122,13 +127,27 @@ if __name__ == '__main__':
                       help="""Prefix to add to constant names in feed""")
   parser.add_argument("--feed-constants-binary", nargs='?', type=bool, default=False,
                       help="""Whether or not feed constant protobuf is binary""")
-  parser.add_argument("--output-prefix", nargs='?', type=str, default="main/emit/",
-                      help="""Prefix of nodes to read output from.""")
-  parser.add_argument("--output-binary", nargs='?', type=bool, default=False,
-                      help="""Whether or not to output in binary.""")
-  parser.add_argument("--output", nargs='?', type=str, default="/dev/stdout")
+
+  parser.add_argument("--run", nargs='?', type=bool, default=False,
+                      help="""Run the graph with given (or default) --result* and --feed-* options""")
+  parser.add_argument("--result-prefix", nargs='?', type=str, default="main/",
+                      help="""Prefix of nodes to read result from.""")
+  parser.add_argument("--result-binary", nargs='?', type=bool, default=False,
+                      help="""Whether or not to result in binary.""")
+  parser.add_argument("--result", nargs='?', type=str, default="/dev/stdout")
+
+  parser.add_argument("--test", nargs='?', type=bool, default=False,
+                      help="""Run the tests graphs with given (or default) --test-* options""")
+  parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^test[^/]*/([^_].*)$",
+                      help="""Pattern to discover test graph results.""")
 
   FLAGS, unparsed = parser.parse_known_args()
+
+  if FLAGS.test == None:
+    FLAGS.test = True
+
+  if FLAGS.run == None:
+    FLAGS.run = True
 
   feed_dict = {}
   # Properly find and strip prefix of constants, loading them with given prefix to feed_dict
@@ -147,15 +166,24 @@ if __name__ == '__main__':
       feed_dict[add_prefix + name + ":0"] = value
 
   graph_def = read_graph_def(FLAGS.graphdef, FLAGS.binary_graphdef)
-  outputs = run_graph(
-    graph_def=graph_def,
-    feed_dict=feed_dict,
-    output_prefix=FLAGS.output_prefix,
-  )
 
-  graph_def = dict_as_graph_def(outputs)
-  write_graph_def(
-    graph_def,
-    output_file=FLAGS.output,
-    output_binary=FLAGS.output_binary,
-  )
+  if FLAGS.test:
+    run_graph(
+      graph_def=graph_def,
+      feed_dict={},
+      result_pattern=re.compile(FLAGS.test_result_pattern),
+    )
+
+  if FLAGS.run or not FLAGS.test:
+    results = run_graph(
+      graph_def=graph_def,
+      feed_dict=feed_dict,
+      result_pattern=re.compile("^%s([^_].*)$" % FLAGS.result_prefix),
+    )
+
+    graph_def = dict_as_graph_def(results)
+    write_graph_def(
+      graph_def,
+      file=FLAGS.result,
+      binary=FLAGS.result_binary,
+    )

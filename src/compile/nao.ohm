@@ -11,6 +11,7 @@ NaoRules {
       | OutputDeclaration
       | ConstantDeclaration
       | AttributeDeclaration
+			| AfterDeclaration
       | NameableExpression
       ) #sc
 
@@ -20,6 +21,7 @@ NaoRules {
 			( InputDeclaration
 			| OutputDeclaration
 			| ConstantDeclaration
+			| AfterDeclaration
 			| NameableExpression
 			) #sc
 
@@ -59,6 +61,9 @@ NaoRules {
 	InputDeclaration = InputGlyph identifier TensorKind
 	OutputDeclaration = OutputGlyph identifier (TensorKind equal ArgumentExpression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
+
+	AfterDeclaration = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
+	AfterBody = GraphElement*
 
 	identifierStart = letter | "_"
 	identifierPart = alnum | "_"
@@ -118,6 +123,8 @@ NaoRules {
 	  = qq qq
 
 	NameableExpression = Expression #(ws+ "--" ws+ identifier)?
+
+	// https://github.com/rtoal/ohm-expression-experiments for operator precedence
 	Expression
 		= SumExpression
 		| DivisionExpression
@@ -129,6 +136,7 @@ NaoRules {
 	ArgumentExpression =
       | NameableExpression
       | TensorLiteral
+			| ListLiteral
 
 	AttributeBlock = "{" AttributeList<"}"> "}"
 	AttributeList<la> = ListOfLookahead<AttributeEntry, ",", la>
@@ -140,12 +148,18 @@ NaoRules {
 	  | TensorShape
       | identifier
 
-	TensorLiteral
-	  = number
+	ListLiteral = "{" ListOfLookahead<ListLiteralEntry, ",", "}"> "}"
+	ListLiteralEntry =
+	  | ListLiteral
+		| ArgumentExpression
+
+	TensorLiteral = TensorLiteralElement
+	TensorLiteralElement
+	  = number  -- number
 	  | "true"  -- true
 	  | "false" -- false
-	  | stringExpression
-	  | "[" ListOfLookahead<TensorLiteral, ",", "]"> "]" -- arr
+	  | stringExpression -- string
+	  | "[" ListOfLookahead<TensorLiteralElement, ",", "]"> "]" -- arr
 
 	AttributeValueList = "[" ListOfLookahead<AttributeValueListEntry, ",", "]"> "]"
 	AttributeValueListEntry
@@ -179,6 +193,7 @@ NaoRules {
 	quint = "quint" ~identifierPart
 	const = "const" ~identifierPart
 
+	after = "after" ~identifierPart
 	graph = "graph" ~identifierPart
 	func = "func" ~identifierPart
 	var = "var" ~identifierPart
