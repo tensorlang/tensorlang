@@ -1,41 +1,30 @@
-func identity {
-  → x scalar float
-  ← x
+func identityBool {
+  → z scalar bool
+  ← z
 }
 
 graph testIdentity {
   const x scalar bool = true
-  tf.Assert(x, [""])
+  tf.Assert(tf.equal(true, identityBool(x)), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
 }
 
-// graph testIdentity {
-//   const x scalar float = 1
-//   tf.Assert(tf.equal(x, identity(x)), [""])
-// }
+func doubleSum {
+  → a scalar float
+  → b scalar float
+  ← c scalar float = a + b * 2.0 + a
+}
+
+graph testSum {
+  const x scalar float = 1.0
+  const y scalar float = 3.0
+  tf.Assert(tf.equal(8.0, doubleSum(x, y)), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
 
 // graph testIdentity_result {
 //   const x scalar float = 1
 // }
 //
-// graph testIdentity {
-//   const x scalar float = 1
-//   ← x
-//
-//   tf.Assert(tf.equal(x, identity(x)), [""])
-// }
-
-// graph testIdentity_result {
-//   1 → x const scalar float
-// }
-//
-// func identity {
-//   → x scalar float
-//   ← x
-// }
-//
-// graph testIdentity {
-//   1 → x const scalar float
-//   testIdentity ← x
-//
-//   tf.Assert(x == identity(x), [""])
-// }

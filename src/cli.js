@@ -7,6 +7,9 @@ const compile = require('./compile.js');
 const run = require('./run.js');
 const test = require('./test.js');
 
+const sourceMapSupport = require('source-map-support');
+sourceMapSupport.install();
+
 const opts = meow(`
 `,
   {

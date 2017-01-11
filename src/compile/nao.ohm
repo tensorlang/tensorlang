@@ -7,23 +7,23 @@ NaoRules {
 	FuncDefinition = #(func ws+ identifier) "{" nl* FuncBody "}" nl*
 	FuncBody = FuncElement*
 	FuncElement =
-      ( InputDeclaration
-      | OutputDeclaration
-      | ConstantDeclaration
-      | AttributeDeclaration
-			| AfterDeclaration
-      | NameableExpression
-      ) #sc
+	    ( InputDeclaration
+	    | OutputDeclaration
+	    | ConstantDeclaration
+	    | AttributeDeclaration
+	    | AfterDeclaration
+	    | Expression
+	    ) #sc
 
 	GraphDefinition = #(graph ws+ identifier) "{" nl* GraphBody "}" nl*
 	GraphBody = GraphElement*
 	GraphElement =
-			( InputDeclaration
-			| OutputDeclaration
-			| ConstantDeclaration
-			| AfterDeclaration
-			| NameableExpression
-			) #sc
+	    ( InputDeclaration
+	    | OutputDeclaration
+	    | ConstantDeclaration
+	    | AfterDeclaration
+	    | Expression
+	    ) #sc
 
 	InputGlyph = "->" | "\u2192"
 	OutputGlyph = "<-" | "\u2190"
@@ -59,7 +59,7 @@ NaoRules {
 	  | quint
 
 	InputDeclaration = InputGlyph identifier TensorKind
-	OutputDeclaration = OutputGlyph identifier (TensorKind equal ArgumentExpression)?
+	OutputDeclaration = OutputGlyph identifier (TensorKind equal Expression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
 
 	AfterDeclaration = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
@@ -67,7 +67,7 @@ NaoRules {
 
 	identifierStart = letter | "_"
 	identifierPart = alnum | "_"
-	identifier  (an identifierifier)
+	identifier  (an identifier)
 	  = identifierStart identifierPart*
 
 	ListOfLookahead<elem, sep, la>
@@ -122,21 +122,23 @@ NaoRules {
 	stringExpression (a string)
 	  = qq qq
 
-	NameableExpression = Expression #(ws+ "--" ws+ identifier)?
+	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
+  Expression1 = Expression2 (relop Expression2)?
+  Expression2 = NonemptyListOf<Expression3, addop>
+  Expression3 = NonemptyListOf<Expression4, mulop>
+  Expression4
+	  = // |  "(" Expression ")"                -- parens
+	  | #(invocationNamespace? identifier) "(" ListOfLookahead<Expression, ",", ")"> ")" AttributeBlock? -- apply
+    | TensorLiteral
+		| ListLiteral
+	  | identifier -- reference
 
-	// https://github.com/rtoal/ohm-expression-experiments for operator precedence
-	Expression
-		= SumExpression
-		| DivisionExpression
-		| #(invocationNamespace? identifier) "(" ListOfLookahead<ArgumentExpression, ",", ")"> ")" AttributeBlock? -- apply
-		| identifier -- reference
+	relop       =  "<=" | "<" | "==" | "!=" | ">=" | ">"
+	addop       =  "+" | "-"
+	mulop       =  "*" | "/"
+
+
 	invocationNamespace = "tf" "."
-	SumExpression = ArgumentExpression "+" ArgumentExpression
-	DivisionExpression = ArgumentExpression "/" ArgumentExpression
-	ArgumentExpression =
-      | NameableExpression
-      | TensorLiteral
-			| ListLiteral
 
 	AttributeBlock = "{" AttributeList<"}"> "}"
 	AttributeList<la> = ListOfLookahead<AttributeEntry, ",", la>
@@ -151,7 +153,7 @@ NaoRules {
 	ListLiteral = "{" ListOfLookahead<ListLiteralEntry, ",", "}"> "}"
 	ListLiteralEntry =
 	  | ListLiteral
-		| ArgumentExpression
+		| Expression
 
 	TensorLiteral = TensorLiteralElement
 	TensorLiteralElement
