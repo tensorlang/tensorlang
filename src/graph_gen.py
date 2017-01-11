@@ -44,6 +44,7 @@ class Context:
 
 class TopLevel:
   TYPES = {
+	  "half": tf.float16,
 	  "float": tf.float32,
 	  "double": tf.float64,
 	  "int8": tf.int8,
