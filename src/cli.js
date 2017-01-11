@@ -1,95 +1,126 @@
 /* @flow */
+"use strict";
 
 const fs = require('fs');
-const parseOpts = require('minimist');
-const compileMod = require('./compile.js');
-const compile = compileMod.compile;
+const meow = require('meow');
+const compile = require('./compile.js');
+const run = require('./run.js');
+const test = require('./test.js');
 
-var opts = parseOpts(
-  process.argv.slice(2),
+const opts = meow(`
+`,
   {
-    string: ['output'],
-    boolean: ['output-binary'],
+    string: [
+      'source',                // --source "graph agraph { const one scalar float = 1 }"
+      'compile',               // --compile foo.pbtxt
+      'use-graph',             // --use-graph file.pbtxt
+      // Path to GraphDef protobuf with constants to feed
+      'feed-constants',        // --feed-constants inputs.pbtxt
+      // Prefix to filter for (and strip from) constants
+      'feed-constants-strip',  // --feed-constants-strip 'agraph/'
+      // Prefix to add to constant names in feed
+      'feed-constants-prefix',
+      // Prefix of nodes to read result from.
+      'result-prefix',         // --result-prefix 'main/'
+      // Pattern to discover test graph results.
+      'test-result-pattern',   // --test-result-pattern '^test/([^_].*)$'
+    ],
+    boolean: [
+      // Run the tests graphs with given (or default) --test-* options
+      'test',
+      // Run the graph with given (or default) --result* and --feed-* options
+      'run',
+      // Whether or not feed constant protobuf is binary
+      'feed-constants-binary',
+      // Whether or not input is binary.
+      'use-graph-binary',
+      // Whether or not to result in binary.
+      'result-binary',
+      'compile-binary',
+    ],
   }
 );
 
-var input = opts._[0];
-var output = opts.output;
-var outputBinary = opts['output-binary'];
 
-compile(input, output, outputBinary, function(err) {
-  if (err) {
-    console.log(err);
+const suffix = ".nao";
+
+// Examples:
+// mypackage
+// mypackage.mygraph
+const inputs = opts.input;
+const flags = opts.flags;
+
+if (inputs.length > 1) {
+  opts.showHelp(1);
+}
+
+var input = inputs[0];
+var splitInput = input.split(".", 2);
+var basename = splitInput[0];
+var graphName = splitInput[1] || 'main';
+
+var compileTo = flags.compile;
+var compileToBinary = flags.compileBinary;
+
+const shouldRunGraph = flags.run || flags.feedConstants || flags.resultPrefix || !(flags.test || flags.compile);
+const shouldTestGraph = flags.test;
+
+// TODO(adamb) Don't do this synchronously
+var source;
+if (flags.source) {
+  source = flags.source;
+  if (basename !== "") {
+    console.log("Can't provide a package name and --source option.")
     process.exit(1);
   }
+} else {
+  var filename = `${basename}${suffix}`
+  source = fs.readFileSync(filename).toString();
+}
 
-  process.exit(0);
+var fromFile: ?string;
+var fromFileBinary: boolean = false;
+var fromString: ?string;
+
+function abortOnCatch(promise: Promise<any>) {
+  promise.catch((err) => {
+    console.log(err);
+    process.exit(1);
+  });
+}
+
+function maybeTest() {
+  if (shouldTestGraph) {
+    if (fromFile) {
+      abortOnCatch(test.fromFile(fromFile, fromFileBinary));
+    } else if (fromString) {
+      abortOnCatch(test.fromString(fromString, false));
+    }
+  }
+}
+
+function maybeRun() {
+  if (shouldRunGraph) {
+    if (fromFile) {
+      abortOnCatch(run.fromFile(fromFile, fromFileBinary));
+    } else if (fromString) {
+      abortOnCatch(run.fromString(fromString, false));
+    }
+  }
+}
+
+var compilation: Promise<any>;
+if (compileTo) {
+  fromFile = compileTo;
+  fromFileBinary = compileToBinary;
+  compilation = compile.compile(source, compileTo, compileToBinary);
+} else {
+  compilation = compile.compileString(source);
+  compilation.then((str) => { fromString = str; });
+}
+
+compilation.then(() => {
+  maybeTest();
+  maybeRun();
 });
-
-// const fs = require('fs');
-// const parseOpts = require('minimist');
-// const compile = require('../src/compile').compile;
-//
-// var opts = parseOpts(
-//   process.argv.slice(2),
-//   {
-//     string: [
-//       'source',                // --source "graph agraph { const one scalar float = 1 }"
-//       'compile',               // --compile mypackage; --compile mypackage.mygraph;
-//       'use-graph',             // --use-graph file.pbtxt
-//       'feed-constants',        // --feed-constants inputs.pbtxt
-//       'feed-constants-strip',  // --feed-constants-strip 'agraph/'
-//       'result-prefix',         // --result-prefix 'main/'
-//       'test-result-pattern',   // --test-result-pattern '^test/([^_].*)$'
-//     ],
-//     boolean: [
-//       'test',
-//       'run',
-//       'feed-constants-binary',
-//       'use-graph-binary',
-//       'result-binary',
-//       'compile-binary',
-//     ],
-//   }
-// );
-//
-// parser.add_argument("--binary-graphdef", nargs='?', type=bool, default=False,
-//                     help="""Whether or not input is binary.""")
-// parser.add_argument("--feed-constants", nargs='?', type=str,
-//                     help="""Path to GraphDef protobuf with constants to feed""")
-// parser.add_argument("--feed-constants-strip", nargs='?', type=str, default="",
-//                     help="""Prefix to filter for (and strip from) constants""")
-// parser.add_argument("--feed-constants-prefix", nargs='?', type=str,
-//                     help="""Prefix to add to constant names in feed""")
-// parser.add_argument("--feed-constants-binary", nargs='?', type=bool, default=False,
-//                     help="""Whether or not feed constant protobuf is binary""")
-//
-// parser.add_argument("--run", nargs='?', type=bool, default=False,
-//                     help="""Run the graph with given (or default) --result* and --feed-* options""")
-// parser.add_argument("--result-prefix", nargs='?', type=str, default="main/",
-//                     help="""Prefix of nodes to read result from.""")
-// parser.add_argument("--result-binary", nargs='?', type=bool, default=False,
-//                     help="""Whether or not to result in binary.""")
-// parser.add_argument("--result", nargs='?', type=str, default="/dev/stdout")
-//
-// parser.add_argument("--test", nargs='?', type=bool, default=False,
-//                     help="""Run the tests graphs with given (or default) --test-* options""")
-// parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^test[^/]*/([^_].*)$",
-//                     help="""Pattern to discover test graph results.""")
-//
-// var input = opts._[0];
-// var splitInput = input.split(".", 2);
-// var filename = splitInput[0];
-// var graphName = splitInput[1]; // may be null.
-//
-// var output = opts.output;
-// var outputBinary = opts['output-binary'];
-//
-// compile(input, output, outputBinary, function(err) {
-//   if (err) {
-//     console.log(err);
-//     process.exit(1);
-//   }
-//
-//   process.exit(0);
-// });
+abortOnCatch(compilation);
