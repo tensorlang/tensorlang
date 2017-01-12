@@ -139,18 +139,33 @@ function createSemantics(grammar) {
 
         return childExpr;
       },
-      Expression1: function(expr2_a, relop, expr2_b) {
-        // console.log('Expression1', expr2_a.asJson, relop.sourceString, expr2_b.asJson);
-        switch (relop) {
-          case "<=":
-          case "<":
-          case "==":
-          case "!=":
-          case ">=":
-          case ">":
+      Expression1: function(expr2_a, _1, relop, _2, expr2_b) {
+        // console.log('Expression1', 'expr2_a', expr2_a.asJson, 'relop', JSON.stringify(relop.asJson), 'expr2_b', expr2_b.asJson);
+        var op = relop.asJson[0];
+
+        if (!op) {
+          return expr2_a.asJson;
         }
 
-        return expr2_a.asJson;
+        var a = expr2_a.asJson;
+        var b = expr2_b.asJson[0];
+
+        switch (op) {
+        case "<=":
+          return ["_sf_apply", null, "tf", "less_equal", ["_sf_attrs"], a, b];
+        case "<":
+          return ["_sf_apply", null, "tf", "less", ["_sf_attrs"], a, b];
+        case "==":
+          return ["_sf_apply", null, "tf", "equal", ["_sf_attrs"], a, b];
+        case "!=":
+          return ["_sf_apply", null, "tf", "not_equal", ["_sf_attrs"], a, b];
+        case ">=":
+          return ["_sf_apply", null, "tf", "greater_equal", ["_sf_attrs"], a, b];
+        case ">":
+          return ["_sf_apply", null, "tf", "greater", ["_sf_attrs"], a, b];
+        default:
+          throw new Error("Unknown operator: " + op);
+        }
       },
       NonemptyListOf: function(elem, sep, rest) {
         return [sep.asJson[0], elem.asJson].concat(rest.asJson);

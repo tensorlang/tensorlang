@@ -123,7 +123,7 @@ NaoRules {
 	  = qq qq
 
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
-  Expression1 = Expression2 (relop Expression2)?
+  Expression1 = Expression2 (#(ws+ relop ws+) Expression2)?
   Expression2 = NonemptyListOf<Expression3, addop>
   Expression3 = NonemptyListOf<Expression4, mulop>
   Expression4
@@ -136,7 +136,6 @@ NaoRules {
 	relop       =  "<=" | "<" | "==" | "!=" | ">=" | ">"
 	addop       =  "+" | "-"
 	mulop       =  "*" | "/"
-
 
 	invocationNamespace = "tf" "."
 
