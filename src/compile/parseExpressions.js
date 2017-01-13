@@ -139,7 +139,7 @@ function createSemantics(grammar) {
       GraphElement: function(decl, _) {
         return decl.asJson;
       },
-      AfterDeclaration: function(_1, _2, _3, _4, _5, body, _6, _7) {
+      AfterStatement: function(_1, _2, _3, _4, _5, body, _6, _7) {
         return ["__sf_after_leaves"].concat(body.asJson);
       },
       Expression: function(child, _1, _2, _3, nameExpr) {
@@ -152,11 +152,9 @@ function createSemantics(grammar) {
         var childExprType = childExpr[0];
         switch (childExprType) {
         case "_sf_local":
-          break;
         case "_sf_list":
-          break;
         case "_named_tensor":
-          break;
+        case "_sf_cond":
         case "_sf_index":
           break;
         case "_sf_apply":
@@ -173,6 +171,10 @@ function createSemantics(grammar) {
 
         // Expect the last element to have no operator that goes with it.
         return [ops, elem.asJson].concat(rest.asJson);
+      },
+      IfExpression: function(_1, _2, cond, _3, _4, thenClause, _5, _6, _7, _8, _9, elseClause, _10, _11) {
+        console.log('IfStatement', cond.asJson, thenClause.asJson, elseClause.asJson);
+        return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       Expression1: function(subexpr) {
         return reduceOperandList(subexpr.asJson, {
@@ -243,7 +245,7 @@ function createSemantics(grammar) {
           return ["__retval", name.asJson, rhsValue];
         }
 
-        return ["__retval", name.asJson, ["_sf_local", name.sourceString]];
+        return ["__retval", name.asJson, ["_sf_local", name.asJson]];
       },
     }
   );

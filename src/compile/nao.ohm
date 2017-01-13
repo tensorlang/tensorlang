@@ -11,7 +11,7 @@ NaoRules {
 	    | OutputDeclaration
 	    | ConstantDeclaration
 	    | AttributeDeclaration
-	    | AfterDeclaration
+	    | AfterStatement
 	    | Expression
 	    ) #sc
 
@@ -21,7 +21,7 @@ NaoRules {
 	    ( InputDeclaration
 	    | OutputDeclaration
 	    | ConstantDeclaration
-	    | AfterDeclaration
+	    | AfterStatement
 	    | Expression
 	    ) #sc
 
@@ -62,7 +62,7 @@ NaoRules {
 	OutputDeclaration = OutputGlyph identifier (TensorKind equal Expression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
 
-	AfterDeclaration = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
+	AfterStatement = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
 	AfterBody = GraphElement*
 
 	identifierStart = letter | "_"
@@ -123,6 +123,7 @@ NaoRules {
 	stringExpression (a string)
 	   =  "\"" (char | "\'")* "\""
 
+
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
   Expression1 = NonemptyListOf<Expression2, relop>
   Expression2 = NonemptyListOf<Expression3, addop>
@@ -132,8 +133,13 @@ NaoRules {
 	  = // |  "(" Expression ")"                -- parens
     | TensorLiteral
 		| ListLiteral
+		| IfExpression
 		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- apply
 	  | identifier -- reference
+
+	// TODO(adamb) Should actually allow multiple conditional expressions, taking the last one.
+	// TODO(adamb) Should also allow multiple then and else expressions.
+	IfExpression = #("if" ws+) Expression "{" nl* Expression #sc "}" "else" "{" nl* Expression #sc "}"
 
 
 	indexSuffix = ":" identifier

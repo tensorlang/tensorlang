@@ -148,22 +148,27 @@ class DeclaredFunction:
 
 
 class Context:
-  def __init__(self, global_functions, global_namespaces):
+  def __init__(self, global_functions, global_namespaces, parent=None):
+    self._parent = parent
     self._functions = global_functions
     self._namespaces = global_namespaces
     self._locals = {}
     self._root_suffixes = {}
     self._leaves = set()
 
+  def subcontext(self):
+    return Context(self._functions, self._namespaces, parent=self)
+
   def namespace_lookup(self, ns_name, key):
-    ns = self._namespaces[ns_name]
-    return PrimitiveFunction(getattr(ns, key));
+    if ns_name in self._namespaces:
+      ns = self._namespaces[ns_name]
+      return PrimitiveFunction(getattr(ns, key));
+
+    if self._parent:
+      return self._parent.namespace_lookup(ns_name, key)
 
   def set_function(self, name, defn):
     self._functions[name] = DeclaredFunction([name, *defn])
-
-  def get_function(self, name):
-    return self._functions[name]
 
   def set_local(self, name, value):
     self._locals[name] = value
@@ -175,7 +180,10 @@ class Context:
     if name in self._functions:
       return self._functions[name]
 
-    raise "No such local or function: %s" % name
+    if self._parent:
+      return self._parent.get_local(name)
+
+    raise Exception("No such local or function: %s" % name)
 
   def possible_leaf(self, op):
     t = type(op)
@@ -187,9 +195,16 @@ class Context:
     if t == tf.Tensor or t == tf.Operation:
       self._leaves.discard(op)
 
-  def leaves(self):
-    return frozenset(self._leaves)
+    if self._parent:
+      return self._parent.eliminate_leaf(op)
 
+  def leaves(self):
+    l = frozenset(self._leaves)
+    if self._parent:
+      l = l | self._parent.leaves()
+    return l
+
+  # TODO(adamb) Properly nest names for parents.
   def unique_name(self, root):
     if not root in self._root_suffixes:
       self._root_suffixes[root] = -1
@@ -289,6 +304,13 @@ class TopLevel:
 
     return result
 
+  def _sf_cond(self, ctx, cond, then, els):
+    return tf.cond(
+      pred=self.visit(ctx, cond),
+      fn1=lambda: self.visit(ctx.subcontext(), then),
+      fn2=lambda: self.visit(ctx.subcontext(), els),
+    )
+
   def _sf_local(self, ctx, name):
     # eprint(ctx)
     return ctx.get_local(name)
@@ -314,7 +336,7 @@ class TopLevel:
   def _sf_graph(self, ctx, name, *exprs):
     with tf.variable_scope(name):
       retval_names = []
-      local_ops = Context(self._global_functions, self._global_namespaces)
+      local_ops = ctx.subcontext()
 
       with tf.variable_scope("_"):
         self.visit_graph_exprs(local_ops, retval_names, exprs)

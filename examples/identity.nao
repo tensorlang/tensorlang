@@ -71,3 +71,20 @@ graph testGradient {
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
 }
+
+func max {
+  -> a scalar float
+  -> b scalar float
+  <- c scalar float = if a > b {
+    tf.identity(a) -- c
+  } else {
+    tf.identity(b) -- c
+  }
+}
+
+graph testIf {
+  tf.Assert(1.0 == max(0.1, 1.0), {"1.0 == max(0.1, 1.0)"})
+  tf.Assert(1.0 == max(1.0, 0.1), {"1.0 == max(1.0, 0.1)"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
