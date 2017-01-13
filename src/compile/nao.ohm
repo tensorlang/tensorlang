@@ -142,7 +142,7 @@ NaoRules {
 	addop       =  "+" | "-"
 	mulop       =  "*" | "/"
 
-	invocationNamespace = "tf" "."
+	invocationNamespace = identifier "."
 
 	AttributeBlock = "[" AttributeList<"}"> "]"
 	AttributeList<la> = ListOfLookahead<AttributeEntry, ",", la>

@@ -57,3 +57,17 @@ graph testBifurcate {
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
 }
+
+func square {
+  -> a scalar float
+  <- x scalar float = a * a + a
+}
+
+graph testGradient {
+  nao.disasm(square) -- squareSymbolic
+  tf.gradients(squareSymbolic:outputs, squareSymbolic:inputs) -- gradSquareRetvals
+  nao.reasm(squareSymbolic:inputs, gradSquareRetvals) -- gradSquare
+  tf.Assert(3.0 == gradSquare(1.0), {"2.0 == gradSquare(1.0)"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
