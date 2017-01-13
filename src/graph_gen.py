@@ -1,17 +1,38 @@
+import sys
+
 import tensorflow as tf
+
+def eprint(*args, **kwargs):
+  print(*args, file=sys.stderr, **kwargs)
+
+class RetvalBag:
+  def __init__(self, a_dict):
+    self._d = {}
+
+    for k, v in a_dict.items():
+      if type(v) == RetvalBag:
+        raise "Can't put a RetvalBag into another. %s" % a_dict
+      self._d[k] = v
+
+  def get(self, key):
+    if key == None:
+      l = len(self._d)
+      if l == 0:
+        raise "Can't get default retval for an empty RetvalBag"
+      if l > 1:
+        raise "Can't get default retval a RetvalBag with more than one entry: %s" % self._d
+      key = list(self._d.keys())[0]
+
+    return self._d[key]
+
+  def length(self):
+    return len(self._d)
 
 class Context:
   def __init__(self):
     self.locals = {}
-    self.aliases = {}
     self.root_suffixes = {}
     self._leaves = set()
-
-  def set_alias(self, name, retvals):
-    self.aliases[name] = retvals
-
-  def get_alias(self, name):
-    return self.aliases[name]
 
   def set_local(self, name, value):
     self.locals[name] = value
@@ -20,10 +41,13 @@ class Context:
     return self.locals[name]
 
   def possible_leaf(self, op):
-    self._leaves.add(op)
+    t = type(op)
+    if t == tf.Tensor or t == tf.Operation:
+      self._leaves.add(op)
 
   def eliminate_leaf(self, op):
-    if type(op) == tf.Tensor:
+    t = type(op)
+    if t == tf.Tensor or t == tf.Operation:
       self._leaves.discard(op)
 
   def leaves(self):
@@ -98,12 +122,13 @@ class TopLevel:
   # applying a function
   def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
     # attrs = self.visit(ctx, attrs_expr)
-    # args = [self.visit(ctx, expr) for expr in arg_exprs]
     args = []
     for expr in arg_exprs:
       arg = self.visit(ctx, expr)
+      if type(arg) == RetvalBag:
+        arg = arg.get(None)
       ctx.eliminate_leaf(arg)
-    #   eprint("arg %s -> %s" % (expr, arg))
+      # eprint("arg %s -> %s" % (expr, arg))
       args.append(arg)
 
     if ns_name != None:
@@ -111,7 +136,7 @@ class TopLevel:
       ns = tf
       # How to handle multiple return values?
     #   eprint("tf.%s(%s)" % (fn_name, args))
-      result = getattr(ns, fn_name)(*args)
+      result = getattr(ns, fn_name)(*args, name=name)
       ctx.possible_leaf(result)
       if name != None:
         ctx.set_local(name, result)
@@ -124,7 +149,7 @@ class TopLevel:
       if scope_name == None:
         scope_name = ctx.unique_name(fn_name)
 
-      returned = []
+      returned = {}
       new_ctx = Context()
       with tf.variable_scope(scope_name):
         arg_specs, retval_specs, *body = function[1:]
@@ -139,10 +164,10 @@ class TopLevel:
           self.visit(new_ctx, expr)
 
       for retval_name, retval_argname in retval_specs:
-        returned.append((retval_name, new_ctx.get_local(retval_argname)))
+        returned[retval_name] = new_ctx.get_local(retval_argname)
 
       # For now we only use the first retval
-      result = returned[0][1]
+      result = RetvalBag(returned)
       if name != None:
         ctx.possible_leaf(result)
         ctx.set_local(name, result)
@@ -183,6 +208,10 @@ class TopLevel:
         op = local_ops.get_local(retval_name)
         tf.identity(op, name=retval_name)
 
+  def _sf_index(self, ctx, expr, index):
+    target = self.visit(ctx, expr)
+    return target.get(index)
+
   def _sf_def_function(self, ctx, name, *rest):
     self.functions[name] = [name, *rest]
 
@@ -193,7 +222,7 @@ class TopLevel:
     self.nesting_level = self.nesting_level + 1
     if type(expr) == list:
       expr_type = expr[0]
-    #   eprint("%s%s" % ('  ' * self.nesting_level, expr))
+      eprint("%s%s" % ('  ' * self.nesting_level, expr))
       attr = getattr(self, expr_type)
 
       if expr_type.startswith("_sf_"): # Special form

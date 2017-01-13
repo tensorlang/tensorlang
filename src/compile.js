@@ -13,18 +13,15 @@ module.exports = {
       return Promise.reject(e);
     }
 
-    return new Promise((resolve, reject) => {
-      spawnProcess.withStdinCapturingStdout(
-        "../bin/python",
-        [
-          `${__dirname}/cli.py`,
-          "--input-json", "/dev/stdin",
-          "--output-graph", "/dev/stdout",
-        ],
-        JSON.stringify(expressions),
-        (err, str) => { err ? reject(err) : resolve(str); }
-      );
-    });
+    return spawnProcess.withStdinCapturingStdout(
+      "../bin/python",
+      [
+        `${__dirname}/cli.py`,
+        "--input-json", "/dev/stdin",
+        "--output-graph", "/dev/stdout",
+      ],
+      JSON.stringify(expressions)
+    );
   },
   compile: function(source: string, output: string, binary: boolean): Promise<any> {
     var expressions;

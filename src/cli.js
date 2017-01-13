@@ -57,30 +57,13 @@ if (inputs.length > 1) {
   opts.showHelp(1);
 }
 
-var input = inputs[0];
-var splitInput = input.split(".", 2);
-var basename = splitInput[0];
-var graphName = splitInput[1] || 'main';
-
-var compileTo = flags.compile;
-var compileToBinary = flags.compileBinary;
-
 const shouldRunGraph = flags.run || flags.feedConstants || flags.resultPrefix || !(flags.test || flags.compile);
 const shouldTestGraph = flags.test;
 
-// TODO(adamb) Don't do this synchronously
-var source;
-if (flags.source) {
-  source = flags.source;
-  if (basename !== "") {
-    console.log("Can't provide a package name and --source option.")
-    process.exit(1);
-  }
-} else {
-  var filename = `${basename}${suffix}`
-  source = fs.readFileSync(filename).toString();
-}
+console.log(inputs);
+console.log(flags);
 
+var input = inputs[0];
 var fromFile: ?string;
 var fromFileBinary: boolean = false;
 var fromString: ?string;
@@ -112,18 +95,45 @@ function maybeRun() {
   }
 }
 
-var compilation: Promise<any>;
-if (compileTo) {
-  fromFile = compileTo;
-  fromFileBinary = compileToBinary;
-  compilation = compile.compile(source, compileTo, compileToBinary);
-} else {
-  compilation = compile.compileString(source);
-  compilation.then((str) => { fromString = str; });
-}
+if (input) {
+  var source;
+  var compileTo = flags.compile;
+  var compileToBinary = flags.compileBinary;
 
-compilation.then(() => {
+  var splitInput = input.split(".", 2);
+  var basename = splitInput[0];
+  var graphName = splitInput[1] || 'main';
+
+  // TODO(adamb) Don't do this synchronously
+  if (flags.source) {
+    source = flags.source;
+    if (basename !== "") {
+      console.log("Can't provide a package name and --source option.")
+      process.exit(1);
+    }
+  } else {
+    var filename = `${basename}${suffix}`
+    source = fs.readFileSync(filename).toString();
+  }
+
+  var compilation: Promise<any>;
+  if (compileTo) {
+    fromFile = compileTo;
+    fromFileBinary = compileToBinary;
+    compilation = compile.compile(source, compileTo, compileToBinary);
+  } else {
+    compilation = compile.compileString(source);
+    compilation.then((str) => { fromString = str; });
+  }
+
+  compilation.then(() => {
+    maybeTest();
+    maybeRun();
+  });
+  abortOnCatch(compilation);
+} else {
+  fromFile = flags.useGraph;
+  fromFileBinary = flags.useGraphBinary;
   maybeTest();
   maybeRun();
-});
-abortOnCatch(compilation);
+}

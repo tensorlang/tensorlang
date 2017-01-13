@@ -9,6 +9,28 @@ function loadGrammar() {
   return ohm.grammar(grammarText);
 }
 
+function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string }): any[] {
+  var [ops, ...exprs] = expr;
+
+  if (ops.length === 0) {
+    return exprs[0];
+  }
+
+  return exprs.reduceRight(function(acc, e, ix) {
+    var op = ops[ix];
+    if (!op) {
+      return e;
+    }
+
+    var method = opToTfMethod[op];
+    if (!method) {
+      throw new Error("Unknown operator: " + op);
+    }
+
+    return ["_sf_apply", null, "tf", method, ["_sf_attrs"], e, acc];
+  });
+}
+
 function createSemantics(grammar) {
   var s = grammar.createSemantics();
   s.addAttribute(
@@ -16,7 +38,7 @@ function createSemantics(grammar) {
     {
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },
-      stringExpression: function(_1, _2) { return ""; },
+      stringExpression: function(_1, chars, _2) { return chars.sourceString; },
       nonemptyListOfLookaheadEntry: function(_1, elem1, _2, _3, _4, moreElems, _6, _7) {
         return [elem1.asJson].concat(moreElems.asJson);
       },
@@ -107,7 +129,7 @@ function createSemantics(grammar) {
         var emitted = 0;
         // console.log('GraphDefinition', JSON.stringify(body.asJson));
         body.asJson.forEach(function(expr, ix, exprs) {
-          if (expr[0] === "__retval" && expr[1]) {
+          if (expr[0] === "__retval" && !expr[1]) {
             expr[1] = "" + emitted++;
           }
         });
@@ -120,9 +142,10 @@ function createSemantics(grammar) {
       AfterDeclaration: function(_1, _2, _3, _4, _5, body, _6, _7) {
         return ["__sf_after_leaves"].concat(body.asJson);
       },
-      Expression: function(child, _1, _2, _3, name) {
+      Expression: function(child, _1, _2, _3, nameExpr) {
         var childExpr = child.asJson;
-        if (name.sourceString === "") {
+        var name = nameExpr.asJson[0];
+        if (name === "") {
           return childExpr;
         }
 
@@ -130,8 +153,14 @@ function createSemantics(grammar) {
         switch (childExprType) {
         case "_sf_local":
           break;
+        case "_sf_list":
+          break;
+        case "_named_tensor":
+          break;
+        case "_sf_index":
+          break;
         case "_sf_apply":
-          childExpr[1] = name.sourceString;
+          childExpr[1] = name;
           break;
         default:
           throw new Error("Unhandled child expression type: " + childExprType);
@@ -139,87 +168,49 @@ function createSemantics(grammar) {
 
         return childExpr;
       },
-      Expression1: function(expr2_a, _1, relop, _2, expr2_b) {
-        // console.log('Expression1', 'expr2_a', expr2_a.asJson, 'relop', JSON.stringify(relop.asJson), 'expr2_b', expr2_b.asJson);
-        var op = relop.asJson[0];
-
-        if (!op) {
-          return expr2_a.asJson;
-        }
-
-        var a = expr2_a.asJson;
-        var b = expr2_b.asJson[0];
-
-        switch (op) {
-        case "<=":
-          return ["_sf_apply", null, "tf", "less_equal", ["_sf_attrs"], a, b];
-        case "<":
-          return ["_sf_apply", null, "tf", "less", ["_sf_attrs"], a, b];
-        case "==":
-          return ["_sf_apply", null, "tf", "equal", ["_sf_attrs"], a, b];
-        case "!=":
-          return ["_sf_apply", null, "tf", "not_equal", ["_sf_attrs"], a, b];
-        case ">=":
-          return ["_sf_apply", null, "tf", "greater_equal", ["_sf_attrs"], a, b];
-        case ">":
-          return ["_sf_apply", null, "tf", "greater", ["_sf_attrs"], a, b];
-        default:
-          throw new Error("Unknown operator: " + op);
-        }
-      },
       NonemptyListOf: function(elem, sep, rest) {
-        return [sep.asJson[0], elem.asJson].concat(rest.asJson);
+        var ops = sep.asJson;
+
+        // Expect the last element to have no operator that goes with it.
+        return [ops, elem.asJson].concat(rest.asJson);
+      },
+      Expression1: function(subexpr) {
+        return reduceOperandList(subexpr.asJson, {
+          "<=": "less_equal",
+          "<": "less",
+          "==": "equal",
+          "!=": "not_equal",
+          ">=": "greater_equal",
+          ">": "greater",
+        });
       },
       Expression2: function(subexpr) {
-        // console.log('Expression2', subexpr.asJson);
-
-        var [op, ...operands] = subexpr.asJson;
-        if (operands.length === 1) {
-          return operands[0];
-        }
-
-        return operands.reduceRight(function(acc, cur) {
-          if (!acc) {
-            return cur;
-          }
-
-          switch (op) {
-          case "+":
-            return ["_sf_apply", null, "tf", "add", ["_sf_attrs"], acc, cur];
-          case "-":
-            return ["_sf_apply", null, "tf", "subtract", ["_sf_attrs"], acc, cur];
-          default:
-            throw new Error("Unknown operator: " + op);
-          }
+        return reduceOperandList(subexpr.asJson, {
+          "+": "add",
+          "-": "subtract",
         });
       },
       Expression3: function(subexpr) {
-        // console.log('Expression3', subexpr.asJson);
-
-        var [op, ...operands] = subexpr.asJson;
-        if (operands.length === 1) {
-          return operands[0];
-        }
-
-        return operands.reduceRight(function(acc, cur) {
-          if (!acc) {
-            return cur;
-          }
-
-          switch (op) {
-          case "*":
-            return ["_sf_apply", null, "tf", "multiply", ["_sf_attrs"], acc, cur];
-          case "/":
-            return ["_sf_apply", null, "tf", "divide", ["_sf_attrs"], acc, cur];
-          default:
-            throw new Error("Unknown operator: " + op);
-          }
+        return reduceOperandList(subexpr.asJson, {
+          "*": "multiply",
+          "/": "divide",
         });
       },
-      Expression4_reference: function(name) {
+      indexSuffix: function(_, identifier) {
+        return identifier.asJson;
+      },
+      Expression4: function(subexpr, indexSuffix) {
+        var suffix = indexSuffix.asJson[0];
+        if (!suffix) {
+          return subexpr.asJson;
+        }
+
+        return ["_sf_index", subexpr.asJson, suffix];
+      },
+      Expression5_reference: function(name) {
         return ["_sf_local", name.sourceString];
       },
-      Expression4_apply: function(ns, fn_name, _1, argList, _2, attrs) {
+      Expression5_apply: function(ns, fn_name, attrs, _1, argList, _2) {
         // TODO(adamb) Support attrs.
 
         return [
@@ -230,7 +221,7 @@ function createSemantics(grammar) {
         return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
       },
       ConstantDeclaration: function(_1, name, kind, _2, tensorLiteral) {
-        var childExpr = tensorLiteral.asJson;
+        var childExpr = [].concat(tensorLiteral.asJson);
         childExpr[1] = name.sourceString;
         childExpr[2] = kind.asJson[1]; // shape
         childExpr[3] = kind.asJson[2]; // dtype
@@ -238,11 +229,21 @@ function createSemantics(grammar) {
         return childExpr;
       },
       OutputDeclaration: function(_1, name, kind, _2, expr) {
-        var child = expr.asJson[0];
-        if (child) {
-          child[1] = name.asJson;
+        var rhsValue = expr.asJson[0];
+
+        if (rhsValue) {
+          if (rhsValue[0] !== ["_sf_local"]) {
+            rhsValue = ["_sf_apply", name.asJson, "tf", "identity", ["_sf_attrs"], rhsValue];
+          }
+
+          if (!rhsValue[1]) {
+            rhsValue[1] = name.asJson;
+          }
+
+          return ["__retval", name.asJson, rhsValue];
         }
-        return ["__retval", name.asJson, child || ["_sf_local", name.sourceString]];
+
+        return ["__retval", name.asJson, ["_sf_local", name.sourceString]];
       },
     }
   );

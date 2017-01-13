@@ -25,24 +25,29 @@ module.exports = {
       callback(exitCodeToError(code));
     });
   },
-  withStdinCapturingStdout: function(cmd: string, args: string[], stdinString: string, callback: (error: ?Error, str: string) => void) {
-    var data = []; // We'll store all the data inside this array
-    var converter = new stream.Writable({
-      write(chunk: Buffer, encoding: string, callback: (err: ?Error) => any) {
+  withStdinCapturingStdout: function(cmd: string, args: string[], stdinString: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      var process = spawn(cmd, args, {env: subprocessEnv, stdio: ['pipe', 'pipe', 2]});
+      process.on('exit', function(code, signal) {
+        console.log('exited', code);
+        var err = exitCodeToError(code);
+        if (err) {
+          reject(err);
+        }
+      });
+
+      var data = []; // We'll store all the data inside this array
+      process.stdout.on('data', function(chunk) {
         data.push(chunk);
-      }
-    });
+      });
+      process.stdout.on('end', function() {
+        // Create a buffer from all the received chunks
+        var b = Buffer.concat(data);
+        resolve(b.toString());
+      });
 
-    var process = spawn(cmd, args, {env: subprocessEnv, stdio: ['pipe', 'pipe', 2]});
-    process.stdout.pipe(converter);
-
-    process.stdin.write(stdinString);
-    process.stdin.end();
-
-    process.on('exit', function(code, signal) {
-      // Create a buffer from all the received chunks
-      var b = Buffer.concat(data);
-      callback(exitCodeToError(code), b.toString());
+      process.stdin.write(stdinString);
+      process.stdin.end();
     });
   }
 };

@@ -3,9 +3,9 @@ func identityBool {
   ← z
 }
 
-graph testIdentity {
+graph testIdentityBool {
   const x scalar bool = true
-  tf.Assert(tf.equal(true, identityBool(x)), {""})
+  tf.Assert(identityBool(x), {""})
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
 }
@@ -19,12 +19,41 @@ func doubleSum {
 graph testSum {
   const x scalar float = 1.0
   const y scalar float = 3.0
-  tf.Assert(tf.equal(8.0, doubleSum(x, y)), {""})
+  tf.Assert(8.0 == doubleSum(x, y), {""})
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
 }
 
-// graph testIdentity_result {
-//   const x scalar float = 1
-// }
-//
+graph testComparisons {
+  tf.Assert(0 == 1 - 1 + 1 - 1 + 1 - 1, {"0 == 1 - 1 + 1 - 1 + 1 - 1"})
+  tf.Assert(1 < 2, {"1 < 2"})
+  tf.Assert(1 <= 2, {"1 <= 2"})
+  tf.Assert(1 == 1, {"1 == 1"})
+  tf.Assert(1 != 2, {"1 != 2"})
+  tf.Assert(1 > 0, {"1 > 0"})
+  tf.Assert(1 >= 0, {"1 >= 0"})
+
+  tf.Assert(false == 2 < 1, {"false == 2 < 1"})
+  tf.Assert(false == 2 <= 1, {"false == 2 <= 1"})
+  tf.Assert(false == 2 == 1, {"false == 2 == 1"})
+  tf.Assert(false == 1 != 1, {"false == 1 != 1"}) -- failing
+  tf.Assert(false == 0 > 1, {"false == 0 > 1"})
+  tf.Assert(false == 0 >= 1, {"false == 0 >= 1"})
+  tf.Assert(false == 0 > 1, {"false == 0 > 1"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func bifurcate {
+  -> x scalar float
+  <- out1 scalar float = x
+  <- out2 scalar float = x + 0.0
+}
+
+graph testBifurcate {
+  bifurcate(1.0) -- b
+  tf.Assert(1.0 == b:out1, {"1.0 == b:out1"})
+  tf.Assert(b:out2 == b:out1, {"b:out2 == b:out1"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}

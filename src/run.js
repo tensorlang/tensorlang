@@ -6,18 +6,15 @@ const spawnProcess = require('./util/spawnProcess.js');
 
 module.exports = {
   fromString: function(graph: string):Promise<string> {
-    return new Promise((resolve, reject) => {
-      spawnProcess.withStdinCapturingStdout(
-        "../bin/python",
-        [
-          `${__dirname}/cli.py`,
-          "--graphdef", "/dev/stdin",
-          "--run"
-        ],
-        graph,
-        (err, str) => { err ? reject(err) : resolve(str); }
-      );
-    });
+    return spawnProcess.withStdinCapturingStdout(
+      "../bin/python",
+      [
+        `${__dirname}/cli.py`,
+        "--graphdef", "/dev/stdin",
+        "--run"
+      ],
+      graph
+    );
   },
   fromFile: function(file: string, binary: boolean):Promise<void> {
     return new Promise((resolve, reject) => {
