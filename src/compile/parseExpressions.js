@@ -27,8 +27,47 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
       throw new Error("Unknown operator: " + op);
     }
 
-    return ["_sf_apply", null, "tf", method, ["_sf_attrs"], e, acc];
+    return ["_sf_apply", null, "tf", method, null, e, acc];
   });
+}
+
+function processFunctionBody(body) {
+  var retvals = [];
+  var args = [];
+  var attrs = [];
+  var expressions = body.asJson.map(function(expr, ix, exprs) {
+    if (expr[0] === "_named_placeholder") {
+      var sub = expr.slice(1);
+      args.push(sub);
+      var argName = expr[1];
+      return ["_sf_local", argName];
+    }
+
+    if (expr[0] === "__retval") {
+      var retName = expr[1];
+      var retVal = expr[2];
+      var subName = retVal[1];
+      if (!subName) {
+        subName = "retval_" + retvals.length;
+        retVal[1] = subName;
+      }
+
+      retvals.push([retName, subName]);
+      return retVal;
+    }
+
+    if (expr[0] === "__attr_decl") {
+      var attrName = expr[1];
+      var attrType = expr[2];
+      var attrInitialValue = expr[3];
+      attrs.push([attrName, attrType, attrInitialValue]);
+      return ["_sf_attr", attrName];
+    }
+
+    return expr;
+  });
+
+  return [attrs, args, retvals].concat(expressions);
 }
 
 function createSemantics(grammar) {
@@ -39,13 +78,14 @@ function createSemantics(grammar) {
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },
       stringExpression: function(_1, chars, _2) { return chars.sourceString; },
+      EmptyListOf: function() { },
       nonemptyListOfLookaheadEntry: function(_1, elem1, _2, _3, _4, moreElems, _6, _7) {
         return [elem1.asJson].concat(moreElems.asJson);
       },
       invocationNamespace: function(ns, _) { return ns.sourceString; },
       nonemptyListOfLookahead: function(elems) {
         return elems.asJson.reduce(function(acc, cur) {
-          return acc ? cur : acc.concat(cur);
+          return acc ? acc.concat(cur) : cur;
         });
       },
       TensorKind: function(shape, type) { return ["kind", shape.asJson, type.asJson]; },
@@ -97,37 +137,17 @@ function createSemantics(grammar) {
         return ["_named_tensor", null, null, null, child.asJson];
       },
 
+      FuncLiteral: function(_1, _2, _3, body, _4, _5) {
+        return ["_sf_function", null].concat(processFunctionBody(body));
+      },
       FuncDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
-        var retvals = [];
-        var args = [];
-        var expressions = body.asJson.map(function(expr, ix, exprs) {
-          if (expr[0] === "_named_placeholder") {
-            var sub = expr.slice(1);
-            args.push(sub);
-            var argName = expr[1];
-            return ["_sf_local", argName];
-          }
-
-          if (expr[0] === "__retval") {
-            var retName = expr[1];
-            var retVal = expr[2];
-            var subName = retVal[1];
-
-            retvals.push([retName, subName]);
-            return retVal;
-          }
-
-          return expr;
-        });
-
-        return ["_sf_def_function", name.asJson, args, retvals].concat(expressions);
+        return ["_sf_def_function", name.asJson].concat(processFunctionBody(body));
       },
       FuncElement: function(decl, _) {
         return decl.asJson;
       },
       GraphDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
         var emitted = 0;
-        // console.log('GraphDefinition', JSON.stringify(body.asJson));
         body.asJson.forEach(function(expr, ix, exprs) {
           if (expr[0] === "__retval" && !expr[1]) {
             expr[1] = "" + emitted++;
@@ -152,11 +172,12 @@ function createSemantics(grammar) {
         var childExprType = childExpr[0];
         switch (childExprType) {
         case "_sf_local":
+        case "_sf_attr":
         case "_sf_list":
-        case "_named_tensor":
         case "_sf_cond":
         case "_sf_index":
           break;
+        case "_named_tensor":
         case "_sf_apply":
           childExpr[1] = name;
           break;
@@ -173,7 +194,6 @@ function createSemantics(grammar) {
         return [ops, elem.asJson].concat(rest.asJson);
       },
       IfExpression: function(_1, _2, cond, _3, _4, thenClause, _5, _6, _7, _8, _9, elseClause, _10, _11) {
-        console.log('IfStatement', cond.asJson, thenClause.asJson, elseClause.asJson);
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       Expression1: function(subexpr) {
@@ -213,11 +233,21 @@ function createSemantics(grammar) {
         return ["_sf_local", name.sourceString];
       },
       Expression5_apply: function(ns, fn_name, attrs, _1, argList, _2) {
-        // TODO(adamb) Support attrs.
-
         return [
-          "_sf_apply", null, ns.asJson[0], fn_name.sourceString, ["_sf_attrs"],
+          "_sf_apply", null, ns.asJson[0], fn_name.sourceString, attrs.asJson[0],
         ].concat(argList.asJson);
+      },
+      AttributeDeclaration: function(_1, name, type, _2, value) {
+        return ["__attr_decl", name.asJson, type.asJson[0], value.asJson[0]];
+      },
+      AttributeBlock: function(_1, list, _2) {
+        return ["_sf_attrs", ...list.asJson];
+      },
+      AttributeList: function(list) {
+        return list.asJson;
+      },
+      AttributeEntry: function(name, _, value) {
+        return [name.asJson, value.asJson];
       },
       InputDeclaration: function(_, name, kind) {
         return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
@@ -233,19 +263,15 @@ function createSemantics(grammar) {
       OutputDeclaration: function(_1, name, kind, _2, expr) {
         var rhsValue = expr.asJson[0];
 
-        if (rhsValue) {
-          if (rhsValue[0] !== ["_sf_local"]) {
-            rhsValue = ["_sf_apply", name.asJson, "tf", "identity", ["_sf_attrs"], rhsValue];
-          }
-
-          if (!rhsValue[1]) {
-            rhsValue[1] = name.asJson;
-          }
-
-          return ["__retval", name.asJson, rhsValue];
+        if (!rhsValue) {
+          return ["__retval", name.asJson, ["_sf_local", name.asJson]];
         }
 
-        return ["__retval", name.asJson, ["_sf_local", name.asJson]];
+        if (rhsValue[0] !== ["_sf_local"]) {
+          rhsValue = ["_sf_apply", null, "tf", "identity", null, rhsValue];
+        }
+
+        return ["__retval", name.asJson, rhsValue];
       },
     }
   );

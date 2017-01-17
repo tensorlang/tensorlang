@@ -33,7 +33,14 @@ class PrimitiveFunction:
   def __init__(self, fn):
     self._fn = fn
 
-  def apply(self, visitor, args, kwargs):
+  def apply(self, visitor, name, kwargs, args):
+    if kwargs == None:
+      kwargs = {}
+
+    if name != None:
+      kwargs = dict(kwargs)
+      kwargs['name'] = name
+
     try:
       return self._fn(*args, **kwargs)
     except:
@@ -45,10 +52,7 @@ class SyntheticFunction:
     self._retnames = retnames
     self._graphdef = graphdef
 
-  def apply(self, visitor, args, kwargs):
-    if 'name' in kwargs:
-      scope_name = kwargs['name']
-
+  def apply(self, visitor, scope_name, kwargs, args):
     retvals = tf.import_graph_def(
       self._graphdef,
       name=scope_name,
@@ -70,26 +74,30 @@ class Nao:
     return RetvalBag({"inputs": argvars, "outputs": retvals})
 
 class DeclaredFunction:
-  def __init__(self, expr):
+  def __init__(self, ctx, expr):
+    self._ctx = ctx
     self._expr = expr
 
   def _name(self):
     return self._expr[0]
 
+  def _attr_specs(self):
+    return self._expr[1];
+
   def _arg_specs(self):
-    return self._expr[1]
+    return self._expr[2]
 
   def _arg_names(self):
     return [name for (name, shape, dtype) in self._arg_specs()]
 
   def _retval_specs(self):
-    return self._expr[2]
+    return self._expr[3]
 
   def _retval_argnames(self):
     return [name for (_, name) in self._retval_specs()]
 
   def _body(self):
-    return self._expr[3:]
+    return self._expr[4:]
 
   def get(self, key):
     if key == "outputs":
@@ -104,7 +112,7 @@ class DeclaredFunction:
     with tf.Graph().as_default() as g:
       # TODO(adamb) Should actually have captured the environment where the function was defined.
       visitor = TopLevel()
-      new_ctx = Context(visitor._global_functions, visitor._global_namespaces)
+      new_ctx = self._ctx.subcontext()
 
       arg_vars = []
       for (arg_name, shape_expr, dtype_expr) in self._arg_specs():
@@ -114,7 +122,7 @@ class DeclaredFunction:
           shape=visitor.visit(new_ctx, shape_expr),
         )
         arg_vars.append(arg_var)
-        new_ctx.set_local(arg_name, arg_var)
+        new_ctx.define_local(arg_name, arg_var)
 
       for expr in self._body():
         visitor.visit(new_ctx, expr)
@@ -122,19 +130,17 @@ class DeclaredFunction:
       retvals = [new_ctx.get_local(retval_argname) for retval_argname in self._retval_argnames()]
       return (arg_vars, retvals)
 
-  def apply(self, visitor, args, kwargs):
-    if 'name' in kwargs:
-      scope_name = kwargs['name']
-
-    if scope_name == None:
-      scope_name = ctx.unique_name(fn_name)
-
+  def apply(self, visitor, scope_name, attrs, args):
     returned = {}
-    new_ctx = Context(visitor._global_functions, visitor._global_namespaces)
+    new_ctx = self._ctx.subcontext()
+    if attrs != None:
+      for name, value in attrs.items():
+        new_ctx.define_attr(name, value)
+
     with tf.variable_scope(scope_name):
       # preload locals with references to input operations
       for arg, arg_name in zip(args, self._arg_names()):
-        new_ctx.set_local(arg_name, arg)
+        new_ctx.define_local(arg_name, arg)
 
       # Need to visit expressions
       for expr in self._body():
@@ -148,16 +154,17 @@ class DeclaredFunction:
 
 
 class Context:
-  def __init__(self, global_functions, global_namespaces, parent=None):
+  def __init__(self, global_namespaces, parent=None):
     self._parent = parent
-    self._functions = global_functions
+    self._functions = {}
     self._namespaces = global_namespaces
+    self._attrs = {}
     self._locals = {}
     self._root_suffixes = {}
     self._leaves = set()
 
   def subcontext(self):
-    return Context(self._functions, self._namespaces, parent=self)
+    return Context(self._namespaces, parent=self)
 
   def namespace_lookup(self, ns_name, key):
     if ns_name in self._namespaces:
@@ -168,14 +175,28 @@ class Context:
       return self._parent.namespace_lookup(ns_name, key)
 
   def set_function(self, name, defn):
-    self._functions[name] = DeclaredFunction([name, *defn])
+    self._functions[name] = DeclaredFunction(self, [name, *defn])
 
-  def set_local(self, name, value):
+  def define_local(self, name, value):
+    if name in self._locals:
+      raise Exception("Local already defined: %s" % name)
     self._locals[name] = value
+
+  def define_attr(self, name, value):
+    if name in self._attrs:
+      raise Exception("Attribute already defined: %s" % name)
+
+    if name in self._locals:
+      raise Exception("Can't define attribute. Local exists with name: %s" % name)
+
+    self._attrs[name] = value
 
   def get_local(self, name):
     if name in self._locals:
       return self._locals[name]
+
+    if name in self._attrs:
+      return self._attrs[name]
 
     if name in self._functions:
       return self._functions[name]
@@ -183,7 +204,13 @@ class Context:
     if self._parent:
       return self._parent.get_local(name)
 
-    raise Exception("No such local or function: %s" % name)
+    raise Exception("No such local or function: %s. Have: %s" % (name, self._locals))
+
+  def get_attr(self, name):
+    if name in self._attrs:
+      return self._attrs[name]
+
+    raise Exception("No such attribute: %s" % name)
 
   def possible_leaf(self, op):
     t = type(op)
@@ -260,25 +287,31 @@ class TopLevel:
     return float(decimal)
 
   def _sf_list(self, ctx, *exprs):
-    return [self.visit(ctx, expr) for expr in exprs]
+    return [self.__unwrap_bag(self.visit(ctx, expr)) for expr in exprs]
+
+  def __unwrap_bag(self, bag):
+    if type(bag) == RetvalBag:
+      return bag.get(None)
+    return bag
 
   def _named_tensor(self, ctx, name, shape, dtype, value):
     op = tf.constant(value, shape=shape, dtype=dtype, name=name)
     ctx.possible_leaf(op)
 
     if name != None:
-      ctx.set_local(name, op)
+      ctx.define_local(name, op)
 
     return op
 
   def _named_placeholder(self, ctx, name, shape, dtype):
     op = tf.placeholder(dtype, shape=shape, name=name)
-    ctx.set_local(name, op)
+    ctx.define_local(name, op)
     return op
 
   # applying a function
   def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
-    # attrs = self.visit(ctx, attrs_expr)
+    attrs = self.visit(ctx, attrs_expr)
+
     args = []
     for expr in arg_exprs:
       arg = self.visit(ctx, expr)
@@ -296,11 +329,15 @@ class TopLevel:
 
     if type(function) == RetvalBag:
       function = function.get(None)
-    result = function.apply(self, args, {"name": fn_name})
+
+    scope_name = name
+    if scope_name == None:
+      scope_name = ctx.unique_name(fn_name)
+    result = function.apply(self, scope_name, attrs, args)
 
     ctx.possible_leaf(result)
     if name != None:
-      ctx.set_local(name, result)
+      ctx.define_local(name, result)
 
     return result
 
@@ -315,6 +352,10 @@ class TopLevel:
     # eprint(ctx)
     return ctx.get_local(name)
 
+  def _sf_attr(self, ctx, name):
+    # eprint(ctx)
+    return ctx.get_attr(name)
+
   # generating graphs directly
   def visit_graph_exprs(self, ctx, retval_names, exprs):
     for expr in exprs:
@@ -322,7 +363,7 @@ class TopLevel:
         name = expr[1]
         subexpr = expr[2]
         op = self.visit(ctx, subexpr)
-        ctx.set_local(name, op)
+        ctx.define_local(name, op)
         retval_names.append(name)
       elif expr[0] == "__sf_after_leaves":
         # TODO(adamb) Should actually nest local variables AND leaves
@@ -352,14 +393,21 @@ class TopLevel:
   def _sf_def_function(self, ctx, name, *rest):
     ctx.set_function(name, rest)
 
-  def _sf_attrs(self, ctx):
-    return {}
+  def _sf_function(self, ctx, name, *rest):
+    return DeclaredFunction(ctx, [name, *rest])
+
+  def _sf_attrs(self, ctx, *attr_exprs):
+    attrs = {}
+    for name, value_expr in attr_exprs:
+      attrs[name] = self.visit(ctx, value_expr)
+    return attrs
 
   def visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
+    # eprint("%s%s" % ('  ' * self.nesting_level, expr))
+
     if type(expr) == list:
       expr_type = expr[0]
-      eprint("%s%s" % ('  ' * self.nesting_level, expr))
       attr = getattr(self, expr_type)
 
       if expr_type.startswith("_sf_"): # Special form
@@ -380,7 +428,8 @@ class TopLevel:
 def graph_def_from_exprs(exprs):
   with tf.Graph().as_default() as g:
     visitor = TopLevel()
+    ctx = Context(visitor._global_namespaces)
     for expr in exprs:
-      visitor.visit(Context(visitor._global_functions, visitor._global_namespaces), expr)
+      visitor.visit(ctx, expr)
 
     return g.as_graph_def()

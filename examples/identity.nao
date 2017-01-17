@@ -82,9 +82,46 @@ func max {
   }
 }
 
-graph testIf {
+graph testMax {
   tf.Assert(1.0 == max(0.1, 1.0), {"1.0 == max(0.1, 1.0)"})
   tf.Assert(1.0 == max(1.0, 0.1), {"1.0 == max(1.0, 0.1)"})
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func attrOutput {
+  @@ c = 1
+  <- c
+}
+
+graph testAttrOutput {
+  tf.Assert(1 == attrOutput[c: 1](), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func applyFnToSum {
+  @@ f
+  @@ a
+  -> b scalar float
+
+  <- result scalar float = f(a + b)
+}
+
+graph testFnAttr {
+  1.0 -- one
+  2.0 -- two
+  3.0 -- three
+
+  applyFnToSum[
+    a: one,
+    f: func {
+      -> x scalar float
+      <- result scalar float = x * three
+    },
+  ](two) -- result
+
+  tf.Assert(9.0 == result, {"9.0 == result", result})
+
+  after __leaves { ← r2 scalar int8 = tf.identity(0) }
 }
