@@ -7,6 +7,7 @@
     "faucet": "^0.0.1",
     "flow": "^0.2.3",
     "flow-bin": "^0.37.4",
+    "flow-typed": "^2.0.0",
     "meow": "^3.7.0",
     "nexe": "https://github.com/nexe/nexe.git",
     "source-map-support": "^0.4.8",

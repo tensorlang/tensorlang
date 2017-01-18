@@ -29,7 +29,6 @@ module.exports = {
     return new Promise((resolve, reject) => {
       var process = spawn(cmd, args, {env: subprocessEnv, stdio: ['pipe', 'pipe', 2]});
       process.on('exit', function(code, signal) {
-        console.log('exited', code);
         var err = exitCodeToError(code);
         if (err) {
           reject(err);
@@ -49,5 +48,37 @@ module.exports = {
       process.stdin.write(stdinString);
       process.stdin.end();
     });
-  }
+  },
+  withStdinCapturingStdoutAndStderr: function(cmd: string, args: string[], stdinString: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      var process = spawn(cmd, args, {env: subprocessEnv, stdio: ['pipe', 'pipe', 'pipe']});
+      process.on('exit', function(code, signal) {
+        var err = exitCodeToError(code);
+        if (err) {
+          reject(err);
+        }
+      });
+
+      var data = []; // We'll store all the data inside this array
+      process.stdout.on('data', function(chunk) { data.push(chunk); });
+      process.stderr.on('data', function(chunk) { data.push(chunk); });
+
+      Promise.all(
+        [
+          new Promise((rs, rj) => { process.stderr.on('end', rs.bind(null, null)); }),
+          new Promise((rs, rj) => { process.stdout.on('end', rs.bind(null, null)); }),
+        ]
+      )
+      .then(
+        () => {
+          // Create a buffer from all the received chunks
+          var b = Buffer.concat(data);
+          resolve(b.toString());
+        }
+      );
+
+      process.stdin.write(stdinString);
+      process.stdin.end();
+    });
+  },
 };

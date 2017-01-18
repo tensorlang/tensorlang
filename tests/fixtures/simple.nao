@@ -1,0 +1,113 @@
+func identityBool {
+  → z scalar bool
+  ← z
+}
+
+graph testIdentityBool {
+  const x scalar bool = true
+  tf.Assert(identityBool(x), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func doubleSum {
+  → a scalar float
+  → b scalar float
+  ← c scalar float = a + b * 2.0 + a
+}
+
+graph testSum {
+  const x scalar float = 1.0
+  const y scalar float = 3.0
+  tf.Assert(8.0 == doubleSum(x, y), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+graph testComparisons {
+  tf.Assert(0 == 1 - 1 + 1 - 1 + 1 - 1, {"0 == 1 - 1 + 1 - 1 + 1 - 1"})
+  tf.Assert(1 < 2, {"1 < 2"})
+  tf.Assert(1 <= 2, {"1 <= 2"})
+  tf.Assert(1 == 1, {"1 == 1"})
+  tf.Assert(1 != 2, {"1 != 2"})
+  tf.Assert(1 > 0, {"1 > 0"})
+  tf.Assert(1 >= 0, {"1 >= 0"})
+
+  tf.Assert(false == 2 < 1, {"false == 2 < 1"})
+  tf.Assert(false == 2 <= 1, {"false == 2 <= 1"})
+  tf.Assert(false == 2 == 1, {"false == 2 == 1"})
+  tf.Assert(false == 1 != 1, {"false == 1 != 1"}) -- failing
+  tf.Assert(false == 0 > 1, {"false == 0 > 1"})
+  tf.Assert(false == 0 >= 1, {"false == 0 >= 1"})
+  tf.Assert(false == 0 > 1, {"false == 0 > 1"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func bifurcate {
+  -> x scalar float
+  <- out1 scalar float = x
+  <- out2 scalar float = x + 0.0
+}
+
+graph testBifurcate {
+  bifurcate(1.0) -- b
+  tf.Assert(1.0 == b:out1, {"1.0 == b:out1"})
+  tf.Assert(b:out2 == b:out1, {"b:out2 == b:out1"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func max {
+  -> a scalar float
+  -> b scalar float
+  <- c scalar float = if a > b {
+    tf.identity(a)
+  } else {
+    tf.identity(b)
+  }
+}
+
+graph testMax {
+  tf.Assert(1.0 == max(0.1, 1.0), {"1.0 == max(0.1, 1.0)"})
+  tf.Assert(1.0 == max(1.0, 0.1), {"1.0 == max(1.0, 0.1)"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func attrOutput {
+  @@ c = 1
+  <- c
+}
+
+graph testAttrOutput {
+  tf.Assert(1 == attrOutput[c: 1](), {""})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}
+
+func applyFnToSum {
+  @@ f
+  @@ a
+  -> b scalar float
+
+  <- result scalar float = f(a + b)
+}
+
+graph testFnAttr {
+  1.0 -- one
+  2.0 -- two
+  3.0 -- three
+
+  applyFnToSum[
+    a: one,
+    f: func {
+      -> x scalar float
+      <- result scalar float = x * three
+    },
+  ](two) -- result
+
+  tf.Assert(9.0 == result, {"9.0 == result", result})
+
+  after __leaves { ← r2 scalar int8 = tf.identity(0) }
+}

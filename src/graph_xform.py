@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 def constants_as_dict(constants):
   d = {}
   for node in constants:

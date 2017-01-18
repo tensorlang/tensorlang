@@ -118,7 +118,7 @@ if __name__ == '__main__':
       result_pattern=re.compile("^%s([^_].*)$" % FLAGS.result_prefix),
     )
 
-    graph_def = dict_as_graph_def(results)
+    graph_def = graph_xform.dict_as_graph_def(results)
     graph_io.write_graph_def(
       graph_def,
       file=FLAGS.result,

@@ -285,7 +285,7 @@ var parseExpressions = function(source: string) {
 
   var m = grammar.match(source);
   if (m.failed()) {
-    throw m.message;
+    throw new Error(m.message);
   }
 
   return semantics(m).asJson;

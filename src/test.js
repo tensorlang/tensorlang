@@ -5,7 +5,7 @@ const spawnProcess = require('./util/spawnProcess.js');
 
 module.exports = {
   fromString: function(graph: string):Promise<string> {
-    return spawnProcess.withStdinCapturingStdout(
+    return spawnProcess.withStdinCapturingStdoutAndStderr(
       "../bin/python",
       [
         `${__dirname}/cli.py`,
