@@ -176,6 +176,7 @@ function createSemantics(grammar) {
         case "_sf_list":
         case "_sf_cond":
         case "_sf_index":
+        case "_sf_function_lookup":
           break;
         case "_named_tensor":
         case "_sf_apply":
@@ -229,8 +230,16 @@ function createSemantics(grammar) {
 
         return ["_sf_index", subexpr.asJson, suffix];
       },
-      Expression5_reference: function(name) {
-        return ["_sf_local", name.sourceString];
+      Expression5_reference: function(ns, identifier, attrs) {
+        if (ns.asJson[0]) {
+          return ["_sf_namespace_lookup", ns.asJson[0], identifier.asJson, attrs.asJson[0]]
+        }
+
+        if (attrs.asJson[0]) {
+          return ["_sf_function_lookup", identifier.asJson, attrs.asJson[0]]
+        }
+
+        return ["_sf_local", identifier.sourceString];
       },
       Expression5_apply: function(ns, fn_name, attrs, _1, argList, _2) {
         return [
@@ -240,7 +249,7 @@ function createSemantics(grammar) {
       AttributeDeclaration: function(_1, name, type, _2, value) {
         return ["__attr_decl", name.asJson, type.asJson[0], value.asJson[0]];
       },
-      AttributeBlock: function(_1, list, _2) {
+      AttributeBlock: function(_1, _2, list, _3, _4) {
         return ["_sf_attrs", ...list.asJson];
       },
       AttributeList: function(list) {

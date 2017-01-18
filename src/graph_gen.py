@@ -1,3 +1,4 @@
+import copy
 import sys
 
 import tensorflow as tf
@@ -112,7 +113,7 @@ class DeclaredFunction:
     with tf.Graph().as_default() as g:
       # TODO(adamb) Should actually have captured the environment where the function was defined.
       visitor = TopLevel()
-      new_ctx = self._ctx.subcontext()
+      new_ctx = self._ctx.duplicate()
 
       arg_vars = []
       for (arg_name, shape_expr, dtype_expr) in self._arg_specs():
@@ -130,9 +131,20 @@ class DeclaredFunction:
       retvals = [new_ctx.get_local(retval_argname) for retval_argname in self._retval_argnames()]
       return (arg_vars, retvals)
 
+
+  # Update given attrs and return a new function.
+  # (add separate data structure for tracking pre-specified and now unoverrideable values).
+  def apply_attrs(self, visitor, attrs):
+    ctx = self._ctx.duplicate()
+
+    for name, value in attrs.items():
+      ctx.define_attr(name, value)
+
+    return DeclaredFunction(ctx, self._expr)
+
   def apply(self, visitor, scope_name, attrs, args):
     returned = {}
-    new_ctx = self._ctx.subcontext()
+    new_ctx = self._ctx.duplicate()
     if attrs != None:
       for name, value in attrs.items():
         new_ctx.define_attr(name, value)
@@ -162,9 +174,17 @@ class Context:
     self._locals = {}
     self._root_suffixes = {}
     self._leaves = set()
+    self._leftward = None
+    self._above = None
 
   def subcontext(self):
     return Context(self._namespaces, parent=self)
+
+  def duplicate(self):
+    ctx = copy.copy(self)
+    ctx._attrs = copy.copy(ctx._attrs)
+    ctx._locals = copy.copy(ctx._locals)
+    return ctx
 
   def namespace_lookup(self, ns_name, key):
     if ns_name in self._namespaces:
@@ -175,12 +195,15 @@ class Context:
       return self._parent.namespace_lookup(ns_name, key)
 
   def set_function(self, name, defn):
-    self._functions[name] = DeclaredFunction(self, [name, *defn])
+    self._functions[name] = DeclaredFunction(self.subcontext(), [name, *defn])
 
   def define_local(self, name, value):
     if name in self._locals:
       raise Exception("Local already defined: %s" % name)
     self._locals[name] = value
+
+  def has_attr(self, name):
+    return name in self._attrs
 
   def define_attr(self, name, value):
     if name in self._attrs:
@@ -210,7 +233,7 @@ class Context:
     if name in self._attrs:
       return self._attrs[name]
 
-    raise Exception("No such attribute: %s" % name)
+    raise Exception("No such attribute: %s. Have: %s" % (name, self._attrs))
 
   def possible_leaf(self, op):
     t = type(op)
@@ -341,16 +364,20 @@ class TopLevel:
 
     return result
 
-  def _sf_cond(self, ctx, cond, then, els):
+  def _sf_cond(self, ctx, cond_expr, then_expr, else_expr):
     return tf.cond(
-      pred=self.visit(ctx, cond),
-      fn1=lambda: self.visit(ctx.subcontext(), then),
-      fn2=lambda: self.visit(ctx.subcontext(), els),
+      pred=self.visit(ctx, cond_expr),
+      fn1=lambda: self.visit(ctx.subcontext(), then_expr),
+      fn2=lambda: self.visit(ctx.subcontext(), else_expr),
     )
 
   def _sf_local(self, ctx, name):
     # eprint(ctx)
     return ctx.get_local(name)
+
+  def _sf_function_lookup(self, ctx, name, attrs_expr):
+    function = ctx.get_local(name)
+    return function.apply_attrs(self, self.visit(ctx, attrs_expr))
 
   def _sf_attr(self, ctx, name):
     # eprint(ctx)
@@ -394,7 +421,7 @@ class TopLevel:
     ctx.set_function(name, rest)
 
   def _sf_function(self, ctx, name, *rest):
-    return DeclaredFunction(ctx, [name, *rest])
+    return DeclaredFunction(ctx.subcontext(), [name, *rest])
 
   def _sf_attrs(self, ctx, *attr_exprs):
     attrs = {}
