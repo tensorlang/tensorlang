@@ -5,6 +5,7 @@ module.exports = [
   {
     action: "test",
     name: "simplest fail",
+    fails: true,
     source: `graph testAssert {
   tf.Assert(false, {"Assertion failed!"})
 

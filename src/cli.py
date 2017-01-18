@@ -31,7 +31,7 @@ def compile_graph(input_json):
 
   return graph_gen.graph_def_from_exprs(input_exprs)
 
-if __name__ == '__main__':
+def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("graphdef", nargs='?', type=str,
                       help="""Graph file to load.""")
@@ -124,3 +124,10 @@ if __name__ == '__main__':
       file=FLAGS.result,
       binary=FLAGS.result_binary,
     )
+
+if __name__ == '__main__':
+  try:
+    main()
+  except Exception as ex:
+    eprint(ex)
+    sys.exit(1)

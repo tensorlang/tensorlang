@@ -137,10 +137,33 @@ class DeclaredFunction:
   def apply_attrs(self, visitor, attrs):
     ctx = self._ctx.duplicate()
 
+    has_ellipsis = False
     for name, value in attrs.items():
+      if name == '_ellipsis':
+        has_ellipsis = True
+        continue
       ctx.define_attr(name, value)
 
+    missing_attributes = []
+    for name, _, _ in self._attr_specs():
+      if name not in attrs and not ctx.has_attr(name):
+        missing_attributes.append(name)
+
+    if has_ellipsis:
+      if len(missing_attributes) == 0:
+        raise Exception("Saw ... given, but not missing attributes")
+    else:
+      if len(missing_attributes) > 0:
+        raise Exception("No ... given and missing attributes: %s" % missing_attributes)
+
     return DeclaredFunction(ctx, self._expr)
+
+  # If we see syntax like: foo(a: ?, b: ?) then it's a partial application.
+  # For these, bind the values we have return a new function where these values are unoverrideable.
+  def apply_partial():
+    pass
+
+  # How to represent RemyCC in this system? Can we do this tables approach?
 
   def apply(self, visitor, scope_name, attrs, args):
     returned = {}
@@ -194,8 +217,8 @@ class Context:
     if self._parent:
       return self._parent.namespace_lookup(ns_name, key)
 
-  def set_function(self, name, defn):
-    self._functions[name] = DeclaredFunction(self.subcontext(), [name, *defn])
+  def set_function(self, name, fn):
+    self._functions[name] = fn
 
   def define_local(self, name, value):
     if name in self._locals:
@@ -334,6 +357,8 @@ class TopLevel:
   # applying a function
   def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
     attrs = self.visit(ctx, attrs_expr)
+    if attrs and '_ellipsis' in attrs:
+      raise Exception("Can't use attribute ellipsis in function apply")
 
     args = []
     for expr in arg_exprs:
@@ -375,9 +400,13 @@ class TopLevel:
     # eprint(ctx)
     return ctx.get_local(name)
 
-  def _sf_function_lookup(self, ctx, name, attrs_expr):
-    function = ctx.get_local(name)
-    return function.apply_attrs(self, self.visit(ctx, attrs_expr))
+  def _sf_function_lookup(self, ctx, name, fn_name, attrs_expr):
+    function = ctx.get_local(fn_name)
+    result = function.apply_attrs(self, self.visit(ctx, attrs_expr))
+    if name != None:
+      ctx.set_function(name, result)
+
+    return result
 
   def _sf_attr(self, ctx, name):
     # eprint(ctx)
@@ -418,10 +447,15 @@ class TopLevel:
     return target.get(index)
 
   def _sf_def_function(self, ctx, name, *rest):
-    ctx.set_function(name, rest)
+    ctx.set_function(name, DeclaredFunction(ctx.subcontext(), [name, *rest]))
 
   def _sf_function(self, ctx, name, *rest):
     return DeclaredFunction(ctx.subcontext(), [name, *rest])
+
+  def _sf_attrs_with_ellipsis(self, ctx, *attr_exprs):
+    attrs = self._sf_attrs(ctx, *attr_exprs)
+    attrs['_ellipsis'] = True
+    return attrs
 
   def _sf_attrs(self, ctx, *attr_exprs):
     attrs = {}

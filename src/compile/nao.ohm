@@ -138,7 +138,7 @@ NaoRules {
 		| IfExpression
 		| above -- aboveRef
 		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- apply
-		| #(invocationNamespace? identifier) AttributeBlock? -- reference
+		| #(invocationNamespace? identifier) AttributeBlockWithEllipsis? -- reference
 
 	// TODO(adamb) Should actually allow multiple conditional expressions, taking the last one.
 	// TODO(adamb) Should also allow multiple then and else expressions.
@@ -155,6 +155,9 @@ NaoRules {
 
 	AttributeBlock = #("[" nl*) AttributeList<"]"> nl* "]"
 	AttributeList<la> = nonemptyListOfLookahead<AttributeEntry, ",", la>
+
+	AttributeBlockWithEllipsis = #("[" nl*) AttributeListWithEllipsis<"]"> nl* "]"
+	AttributeListWithEllipsis<la> = nonemptyListOfLookahead<(AttributeEntry | "..."), ",", la>
 	AttributeEntry = AttributeName ":" AttributeValue
 	AttributeName = identifier
 	AttributeValue
@@ -188,6 +191,11 @@ NaoRules {
 	  | OutputTypeDeclaration
 	  | AttributeDeclaration
 
+	// TODO(adamb) Implement these next!
+	above = "^" ~identifierPart
+	following = "->"
+	reverseComposition = "|>"
+	here = "."
 
 	// Convenience rules for keywords
 	scalar = "scalar" ~identifierPart

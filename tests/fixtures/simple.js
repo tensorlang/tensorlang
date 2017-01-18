@@ -33,6 +33,8 @@ versions {
 }
 `
   },
+  // TODO(adamb) Should error on unused expression
+  // TODO(adamb) Should error if any function has invalid contents (not only used ones).
   {
     name: "simple constructions",
     action: "test",

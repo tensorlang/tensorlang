@@ -176,8 +176,9 @@ function createSemantics(grammar) {
         case "_sf_list":
         case "_sf_cond":
         case "_sf_index":
-        case "_sf_function_lookup":
           break;
+
+        case "_sf_function_lookup":
         case "_named_tensor":
         case "_sf_apply":
           childExpr[1] = name;
@@ -236,7 +237,7 @@ function createSemantics(grammar) {
         }
 
         if (attrs.asJson[0]) {
-          return ["_sf_function_lookup", identifier.asJson, attrs.asJson[0]]
+          return ["_sf_function_lookup", null, identifier.asJson, attrs.asJson[0]]
         }
 
         return ["_sf_local", identifier.sourceString];
@@ -251,6 +252,28 @@ function createSemantics(grammar) {
       },
       AttributeBlock: function(_1, _2, list, _3, _4) {
         return ["_sf_attrs", ...list.asJson];
+      },
+      AttributeBlockWithEllipsis: function(_1, _2, list, _3, _4) {
+        var entries = [];
+        var hasEllipsis = false;
+        list.asJson.forEach(function(elem) {
+          if (elem === "...") {
+            if (hasEllipsis) {
+              throw new Error("An attribute block may contain up to one ellipsis");
+            }
+
+            hasEllipsis = true;
+            return;
+          }
+
+          entries.push(elem);
+        });
+
+        if (hasEllipsis) {
+          return ["_sf_attrs_with_ellipsis", ...entries];
+        } else {
+          return ["_sf_attrs", ...entries];
+        }
       },
       AttributeList: function(list) {
         return list.asJson;

@@ -95,24 +95,23 @@ function maybeRun() {
   }
 }
 
-if (input) {
+if (input || flags.source) {
   var source;
   var compileTo = flags.compile;
   var compileToBinary = flags.compileBinary;
 
-  var splitInput = input.split(".", 2);
-  var basename = splitInput[0];
-  var graphName = splitInput[1] || 'main';
-
-  // TODO(adamb) Don't do this synchronously
   if (flags.source) {
     source = flags.source;
-    if (basename !== "") {
+    if (input) {
       console.log("Can't provide a package name and --source option.")
       process.exit(1);
     }
   } else {
+    var splitInput = input.split(".", 2);
+    var basename = splitInput[0];
+    var graphName = splitInput[1] || 'main';
     var filename = `${basename}${suffix}`
+    // TODO(adamb) Don't do this synchronously
     source = fs.readFileSync(filename).toString();
   }
 

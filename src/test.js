@@ -22,7 +22,7 @@ module.exports = {
         [
           `${__dirname}/cli.py`,
           "--graphdef", file,
-          ...(binary ? ["--binary-raphdef"] : []),
+          ...(binary ? ["--binary-graphdef"] : []),
           "--test"
         ],
         "",
