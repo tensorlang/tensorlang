@@ -70,8 +70,29 @@ function processFunctionBody(body) {
   return [attrs, args, retvals].concat(expressions);
 }
 
+function replaceHereExpression(expr: any[], callback: (any[]) => void) {
+  if (expr instanceof Array) {
+    switch (expr[0]) {
+    case '__sf_here':
+      callback(expr);
+      break;
+    case "_sf_local":
+    case "_sf_attr":
+    case "_sf_index":
+    case "_sf_cond":
+    case "_sf_function":
+    case "_sf_def_function":
+      // Do not recurse within these.
+      break;
+    default:
+      expr.forEach((e) => { replaceHereExpression(e, callback); });
+    }
+  }
+}
+
 function createSemantics(grammar) {
   var s = grammar.createSemantics();
+  var anonIncrement = 0;
   s.addAttribute(
     'asJson',
     {
@@ -165,7 +186,7 @@ function createSemantics(grammar) {
       Expression: function(child, _1, _2, _3, nameExpr) {
         var childExpr = child.asJson;
         var name = nameExpr.asJson[0];
-        if (name === "") {
+        if (!name) {
           return childExpr;
         }
 
@@ -173,14 +194,16 @@ function createSemantics(grammar) {
         switch (childExprType) {
         case "_sf_local":
         case "_sf_attr":
-        case "_sf_list":
-        case "_sf_cond":
         case "_sf_index":
-          break;
+        case "_sf_cond":
+        case "__sf_here":
+        case "_sf_list":
+          return ["_sf_define_local", name, childExpr];
 
         case "_sf_function_lookup":
         case "_named_tensor":
         case "_sf_apply":
+        case "_named_apply":
           childExpr[1] = name;
           break;
         default:
@@ -199,6 +222,48 @@ function createSemantics(grammar) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       Expression1: function(subexpr) {
+        var [ops, ...exprs] = subexpr.asJson;
+
+        if (ops.length === 0) {
+          return exprs[0];
+        }
+
+        return exprs.reduce(function(acc, e, ix) {
+          if (!acc) {
+            return e;
+          }
+
+          // If the accumulated expression is foo(), it's a _sf_apply.
+          // Recurse down its expressions and replace any ["."] with ["_sf_local", "anonResultN"].
+          // Stop recursing further when we encounter a
+          if (e[0] !== "_sf_apply") {
+            return ["_named_apply", null, e, acc];
+          } else {
+            var previousName = "anon" + anonIncrement++;
+            var firstReference = ["_sf_apply", previousName, "tf", "identity", null, acc];
+            var otherReferences = ["_sf_local", previousName];
+
+
+            replaceHereExpression(
+              e,
+              (expr) => {
+                var reference;
+                if (firstReference) {
+                  reference = firstReference;
+                  firstReference = null;
+                } else {
+                  reference = otherReferences;
+                }
+                expr.length = 0;
+                expr.push(...reference);
+              }
+            );
+
+            return e;
+          }
+        });
+      },
+      Expression2: function(subexpr) {
         return reduceOperandList(subexpr.asJson, {
           "<=": "less_equal",
           "<": "less",
@@ -208,13 +273,13 @@ function createSemantics(grammar) {
           ">": "greater",
         });
       },
-      Expression2: function(subexpr) {
+      Expression3: function(subexpr) {
         return reduceOperandList(subexpr.asJson, {
           "+": "add",
           "-": "subtract",
         });
       },
-      Expression3: function(subexpr) {
+      Expression4: function(subexpr) {
         return reduceOperandList(subexpr.asJson, {
           "*": "multiply",
           "/": "divide",
@@ -223,7 +288,7 @@ function createSemantics(grammar) {
       indexSuffix: function(_, identifier) {
         return identifier.asJson;
       },
-      Expression4: function(subexpr, indexSuffix) {
+      Expression5: function(subexpr, indexSuffix) {
         var suffix = indexSuffix.asJson[0];
         if (!suffix) {
           return subexpr.asJson;
@@ -231,7 +296,7 @@ function createSemantics(grammar) {
 
         return ["_sf_index", subexpr.asJson, suffix];
       },
-      Expression5_reference: function(ns, identifier, attrs) {
+      Expression6_reference: function(ns, identifier, attrs) {
         if (ns.asJson[0]) {
           return ["_sf_namespace_lookup", ns.asJson[0], identifier.asJson, attrs.asJson[0]]
         }
@@ -242,10 +307,16 @@ function createSemantics(grammar) {
 
         return ["_sf_local", identifier.sourceString];
       },
-      Expression5_apply: function(ns, fn_name, attrs, _1, argList, _2) {
+      Expression6_apply: function(ns, fn_name, attrs, _1, argList, _2) {
         return [
           "_sf_apply", null, ns.asJson[0], fn_name.sourceString, attrs.asJson[0],
         ].concat(argList.asJson);
+      },
+      Expression6_aboveRef: function(_) {
+        return ["_sf_local", "^"];
+      },
+      Expression6_hereRef: function(_) {
+        return ["__sf_here"];
       },
       AttributeDeclaration: function(_1, name, type, _2, value) {
         return ["__attr_decl", name.asJson, type.asJson[0], value.asJson[0]];

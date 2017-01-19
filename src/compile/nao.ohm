@@ -127,16 +127,18 @@ NaoRules {
 
 
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
-  Expression1 = NonemptyListOf<Expression2, relop>
-  Expression2 = NonemptyListOf<Expression3, addop>
-  Expression3 = NonemptyListOf<Expression4, mulop>
-	Expression4 = Expression5 #indexSuffix?
-  Expression5
+	Expression1 = NonemptyListOf<Expression2, reverseComposition>
+	Expression2 = NonemptyListOf<Expression3, relop>
+	Expression3 = NonemptyListOf<Expression4, addop>
+	Expression4 = NonemptyListOf<Expression5, mulop>
+	Expression5 = Expression6 #indexSuffix?
+	Expression6
 	  = // |  "(" Expression ")"                -- parens
-    | TensorLiteral
+	  | TensorLiteral
 		| ListLiteral
 		| IfExpression
 		| above -- aboveRef
+		| here -- hereRef
 		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- apply
 		| #(invocationNamespace? identifier) AttributeBlockWithEllipsis? -- reference
 

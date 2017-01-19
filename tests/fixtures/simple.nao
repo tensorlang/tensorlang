@@ -111,3 +111,54 @@ graph testFnAttr {
 
   after __leaves { ← r2 scalar int8 = tf.identity(0) }
 }
+
+func increment {
+  -> a scalar float
+  <- result scalar float = a + 1.0
+}
+
+func decrementBy {
+  -> a scalar float
+  -> b scalar float
+  <- result scalar float = a - b
+}
+
+func doubler {
+  -> a scalar float
+  <- result scalar float = a * 2.0
+}
+
+func incrementDoubler {
+  -> a scalar float
+  increment(^)
+  doubler(^)
+  <- result scalar float = ^
+}
+
+graph testArrows {
+  1.0 |> increment(.) |> doubler(.) -- r0
+  tf.Assert(4.0 == r0, {"Problem with pipe arrow and dot"})
+
+  1.0 |> increment(.) |> decrementBy(123.0, .) -- r1
+  tf.Assert(121.0 == r1, {"Problem with pipe arrow dot in second position"})
+
+  2.0 |> decrementBy(3.0 |> doubler(.), .) -- r2
+  tf.Assert(4.0 == r2, {"Problem with nested pipe arrow"})
+
+  1.0 |> decrementBy(., -3.0) |> doubler(.) -- r3
+  tf.Assert(8.0 == r3, {"Problem with pipe arrow and multiple args"})
+
+  1.0 |> increment |> doubler -- r4
+  tf.Assert(4.0 == r4, {"Problem with pipe arrow"})
+
+  1.0
+  increment(^)
+  doubler(^)
+  ^ -- r5
+  tf.Assert(4.0 == r5, {"Problem with up arrow"})
+
+  incrementDoubler(5.0)
+  tf.Assert(12.0 == ^, {"Problem with up arrow"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}

@@ -179,7 +179,8 @@ class DeclaredFunction:
 
       # Need to visit expressions
       for expr in self._body():
-        visitor.visit(new_ctx, expr)
+        result = visitor.visit(new_ctx, expr)
+        new_ctx.set_above(result)
 
     for retval_name, retval_argname in self._retval_specs():
       returned[retval_name] = new_ctx.get_local(retval_argname)
@@ -197,7 +198,6 @@ class Context:
     self._locals = {}
     self._root_suffixes = {}
     self._leaves = set()
-    self._leftward = None
     self._above = None
 
   def subcontext(self):
@@ -208,6 +208,9 @@ class Context:
     ctx._attrs = copy.copy(ctx._attrs)
     ctx._locals = copy.copy(ctx._locals)
     return ctx
+
+  def set_above(self, value):
+    self._above = value
 
   def namespace_lookup(self, ns_name, key):
     if ns_name in self._namespaces:
@@ -238,6 +241,9 @@ class Context:
     self._attrs[name] = value
 
   def get_local(self, name):
+    if name == '^':
+      return self._above
+
     if name in self._locals:
       return self._locals[name]
 
@@ -335,6 +341,11 @@ class TopLevel:
   def _sf_list(self, ctx, *exprs):
     return [self.__unwrap_bag(self.visit(ctx, expr)) for expr in exprs]
 
+  def _sf_define_local(self, ctx, name, value_expr):
+    value = self.visit(ctx, value_expr)
+    ctx.define_local(name, value)
+    return value
+
   def __unwrap_bag(self, bag):
     if type(bag) == RetvalBag:
       return bag.get(None)
@@ -353,6 +364,20 @@ class TopLevel:
     op = tf.placeholder(dtype, shape=shape, name=name)
     ctx.define_local(name, op)
     return op
+
+  def _named_apply(self, ctx, name, fn, *args):
+    fn = self.__unwrap_bag(fn)
+
+    scope_name = name
+    if scope_name == None:
+      scope_name = ctx.unique_name(fn._name())
+
+    result = fn.apply(self, scope_name, None, args)
+
+    if name != None:
+      ctx.define_local(name, result)
+
+    return result
 
   # applying a function
   def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
@@ -415,20 +440,23 @@ class TopLevel:
   # generating graphs directly
   def visit_graph_exprs(self, ctx, retval_names, exprs):
     for expr in exprs:
+      result = None
       if expr[0] == "__retval":
         name = expr[1]
         subexpr = expr[2]
-        op = self.visit(ctx, subexpr)
-        ctx.define_local(name, op)
+        result = self.visit(ctx, subexpr)
+        ctx.define_local(name, result)
         retval_names.append(name)
       elif expr[0] == "__sf_after_leaves":
         # TODO(adamb) Should actually nest local variables AND leaves
         after_exprs = expr[1:]
         leaves = ctx.leaves()
         with tf.control_dependencies(leaves):
-          self.visit_graph_exprs(ctx, retval_names, after_exprs)
+          result = self.visit_graph_exprs(ctx, retval_names, after_exprs)
       else:
-        self.visit(ctx, expr)
+        result = self.visit(ctx, expr)
+
+      ctx.set_above(result)
 
   def _sf_graph(self, ctx, name, *exprs):
     with tf.variable_scope(name):
