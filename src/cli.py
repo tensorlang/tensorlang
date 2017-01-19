@@ -11,6 +11,7 @@ import json
 import pprint
 import re
 import sys
+import traceback
 
 import graph_gen
 import graph_io
@@ -129,5 +130,7 @@ if __name__ == '__main__':
   try:
     main()
   except Exception as ex:
-    eprint(ex)
+    # TODO(adamb) Should do *real* error printing.
+    # NOTE(adamb) Need to correlate expressions with line and character numbers!
+    traceback.print_exc(file=sys.stderr)
     sys.exit(1)

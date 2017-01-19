@@ -421,6 +421,45 @@ class TopLevel:
       fn2=lambda: self.visit(ctx.subcontext(), else_expr),
     )
 
+  def _sf_while_loop(self, ctx, cond_expr, body_exprs, body_retvals, var_list_exprs):
+    var_list = [self.visit(ctx, expr) for expr in var_list_exprs]
+    var_names = [var.name.split("/")[-1].split(":")[0] for var in var_list]
+
+    def cond(*a):
+      ctx2 = ctx.subcontext()
+      for name, val in zip(var_names, a):
+        ctx2.define_local(name, val)
+      return self.visit(ctx2, cond_expr)
+
+    def body(*a):
+      ctx2 = ctx.subcontext()
+      for name, val in zip(var_names, a):
+        ctx2.define_local(name, val)
+
+      for expr in body_exprs:
+        result = None
+        if expr[0] == "__retval":
+          name = expr[1]
+          subexpr = expr[2]
+          result = self.visit(ctx2, subexpr)
+        else:
+          result = self.visit(ctx2, expr)
+        ctx2.set_above(result)
+
+      body_retval_dict = dict(body_retvals)
+      return [ctx2.get_local(body_retval_dict[var_name]) for var_name in var_names]
+
+    results = tf.while_loop(
+      cond=cond,
+      body=body,
+      loop_vars=var_list,
+      parallel_iterations=1,
+    )
+    if type(results) != list:
+      results = [results]
+
+    return RetvalBag(dict(zip(var_names, results)))
+
   def _sf_local(self, ctx, name):
     # eprint(ctx)
     return ctx.get_local(name)

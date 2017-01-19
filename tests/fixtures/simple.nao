@@ -162,3 +162,13 @@ graph testArrows {
 
   after __leaves { ← result scalar int8 = tf.identity(0) }
 }
+
+graph testLoop {
+  for 1 -- x; x <= 5 {
+    <- x scalar int8 = x + 1
+  } -- out
+
+  tf.Assert(out:x == 6, {"out:x == 6"})
+
+  after __leaves { ← result scalar int8 = tf.identity(0) }
+}

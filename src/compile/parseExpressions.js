@@ -198,6 +198,7 @@ function createSemantics(grammar) {
         case "_sf_cond":
         case "__sf_here":
         case "_sf_list":
+        case "_sf_while_loop":
           return ["_sf_define_local", name, childExpr];
 
         case "_sf_function_lookup":
@@ -221,6 +222,37 @@ function createSemantics(grammar) {
       IfExpression: function(_1, _2, cond, _3, _4, thenClause, _5, _6, _7, _8, _9, elseClause, _10, _11) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
+      ForExpression: function(_1, _2, initializers, condition, body) {
+        var retvals = [];
+        var bodyExprs = body.asJson.map(function(expr) {
+          if (expr[0] === "__retval") {
+            var retName = expr[1];
+            var retVal = expr[2];
+            var subName = retVal[1];
+            if (!subName) {
+              subName = "retval_" + retvals.length;
+              retVal[1] = subName;
+            }
+
+            retvals.push([retName, subName]);
+            return retVal;
+          }
+
+          return expr;
+        });
+
+        return [
+          "_sf_while_loop", condition.asJson,
+          body.asJson, retvals,
+          initializers.asJson,
+        ];
+      },
+      ForInitializers: function(exprs, _2) {
+        return exprs.asJson;
+      },
+      ForBody: function(_1, _2, exprs, _4, _5) {
+        return exprs.asJson;
+      },
       Expression1: function(subexpr) {
         var [ops, ...exprs] = subexpr.asJson;
 
@@ -242,7 +274,6 @@ function createSemantics(grammar) {
             var previousName = "anon" + anonIncrement++;
             var firstReference = ["_sf_apply", previousName, "tf", "identity", null, acc];
             var otherReferences = ["_sf_local", previousName];
-
 
             replaceHereExpression(
               e,

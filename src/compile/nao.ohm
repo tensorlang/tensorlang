@@ -137,6 +137,7 @@ NaoRules {
 	  | TensorLiteral
 		| ListLiteral
 		| IfExpression
+		| ForExpression
 		| above -- aboveRef
 		| here -- hereRef
 		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- apply
@@ -146,6 +147,13 @@ NaoRules {
 	// TODO(adamb) Should also allow multiple then and else expressions.
 	IfExpression = #("if" ws+) Expression "{" nl* Expression #sc "}" "else" "{" nl* Expression #sc "}"
 
+	ForExpression = #("for" ws+) ForInitializers ForCondition ForBody
+	ForInitializers = (Expression #sc)+
+	ForCondition = Expression
+	ForBody = "{" nl* (ForBodyExpression #sc)+ "}"
+	ForBodyExpression
+		= Expression
+		| OutputDeclaration
 
 	indexSuffix = ":" identifier
 
