@@ -24,19 +24,19 @@ import tensorflow as tf
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
-def compile_graph(input_json):
+def compile_meta_graph(input_json):
   with open(input_json, "r") as f:
     s = f.read()
     input_exprs = json.loads(s)
     # pp.pprint(input_exprs)
 
-  return graph_gen.graph_def_from_exprs(input_exprs)
+    return graph_gen.meta_graph_def_from_exprs(input_exprs)
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument("graphdef", nargs='?', type=str,
+  parser.add_argument("metagraphdef", nargs='?', type=str,
                       help="""Graph file to load.""")
-  parser.add_argument("--binary-graphdef", nargs='?', type=bool, default=False,
+  parser.add_argument("--binary-metagraphdef", nargs='?', type=bool, default=False,
                       help="""Whether or not input is binary.""")
   parser.add_argument("--feed-constants", nargs='?', type=str,
                       help="""Path to GraphDef protobuf with constants to feed""")
@@ -64,23 +64,23 @@ def main():
                       help="""JSON file to load.""")
   parser.add_argument("--output-binary", nargs='?', type=bool, default=False,
                       help="""Whether or not to output in binary.""")
-  parser.add_argument("--output-graph", nargs='?', type=str,
+  parser.add_argument("--output-metagraphdef", nargs='?', type=str,
                       help="""Path to write output in.""")
 
   FLAGS, unparsed = parser.parse_known_args()
 
-  graph_def = None
+  meta_graph_def = None
 
-  if FLAGS.graphdef:
-    graph_def = graph_io.read_graph_def(FLAGS.graphdef, FLAGS.binary_graphdef)
+  if FLAGS.metagraphdef:
+    meta_graph_def = graph_io.read_meta_graph_def(FLAGS.metagraphdef, FLAGS.binary_metagraphdef)
 
   if FLAGS.input_json:
-    graph_def = compile_graph(FLAGS.input_json)
+    meta_graph_def = compile_meta_graph(FLAGS.input_json)
 
-  if FLAGS.output_graph:
-    graph_io.write_graph_def(
-      graph_def=graph_def,
-      file=FLAGS.output_graph,
+  if FLAGS.output_metagraphdef:
+    graph_io.write_meta_graph_def(
+      meta_graph_def=meta_graph_def,
+      file=FLAGS.output_metagraphdef,
       binary=FLAGS.output_binary)
 
   if FLAGS.test == None:
@@ -106,15 +106,15 @@ def main():
       feed_dict[add_prefix + name + ":0"] = value
 
   if FLAGS.test:
-    graph_execution.run(
-      graph_def=graph_def,
+    graph_execution.import_and_run_meta_graph(
+      meta_graph_def=meta_graph_def,
       feed_dict={},
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
 
   if FLAGS.run:
-    results = graph_execution.run(
-      graph_def=graph_def,
+    results = graph_execution.import_and_run_meta_graph(
+      meta_graph_def=meta_graph_def,
       feed_dict=feed_dict,
       result_pattern=re.compile("^%s([^_].*)$" % FLAGS.result_prefix),
     )

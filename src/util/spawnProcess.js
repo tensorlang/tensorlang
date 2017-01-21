@@ -16,7 +16,7 @@ const env = process.env;
 const CUDA_HOME = "/usr/local/cuda";
 const subprocessEnv = {
   "CUDA_HOME": CUDA_HOME,
-  "DYLD_LIBRARY_PATH": `${env['DYLD_LIBRARY_PATH'] || ''}:${CUDA_HOME}/lib`,
+  "DYLD_LIBRARY_PATH": `${env['DYLD_LIBRARY_PATH'] || ''}:${CUDA_HOME}/lib:${CUDA_HOME}/extras/CUPTI/lib`,
   "PATH": `${CUDA_HOME}/bin:${env['PATH'] || ''}`,
 };
 

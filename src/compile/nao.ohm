@@ -1,6 +1,15 @@
 NaoRules {
-	Program = SourceElement*
-	SourceElement
+	Program = ImportDeclaration* TopLevelDecl*
+
+	ImportDeclaration = "import" ImportDeclarationBody
+	ImportDeclarationBody =
+	  | ImportSpec                      -- single
+	  | "(" nl* ImportSpec+ nl* ")" #sc -- multi
+	ImportSpec = PackageName? ImportPath #sc
+	PackageName = identifier
+	ImportPath = stringLiteral
+
+	TopLevelDecl
 	  = FuncDefinition
 		| GraphDefinition
 
@@ -97,7 +106,7 @@ NaoRules {
 	// NOTE: Applications of this rule *must* appear in a lexical context -- either in the body of a
 	// lexical rule, or inside `#()`.
 	sc
-	  = spacesNoNL (nl+ | ~multiLineCommentNoNL multiLineComment | &"}") -- a
+	  = spacesNoNL (nl+ | ~multiLineCommentNoNL multiLineComment | &"}" | &")") -- a
       | space* (";" | end | nl+) (space | nl)* -- b
 
 	sourceCharacter = any
@@ -122,9 +131,8 @@ NaoRules {
 	char        =  escape
 	              |  ~"\\" ~"\"" ~"'" ~"\n" any
 	escape      =  "\\\\" | "\\\"" | "\\'" | "\\n" | "\\t"
-	stringExpression (a string)
+	stringLiteral (a string)
 	   =  "\"" (char | "\'")* "\""
-
 
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
 	Expression1 = NonemptyListOf<Expression2, reverseComposition>
@@ -155,7 +163,9 @@ NaoRules {
 		= Expression
 		| OutputDeclaration
 
-	indexSuffix = ":" identifier
+	indexSuffix = ":" (indexIdentifier | indexNumber)
+	indexIdentifier = identifier
+	indexNumber = digit+
 
 	relop       =  "<=" | "<" | "==" | "!=" | ">=" | ">"
 	addop       =  "+" | "-"
@@ -186,7 +196,7 @@ NaoRules {
 	  = number  -- number
 	  | "true"  -- true
 	  | "false" -- false
-	  | stringExpression -- string
+	  | stringLiteral -- string
 	  | "[" ListOfLookahead<TensorLiteralElement, ",", "]"> "]" -- arr
 
 	AttributeValueList = "[" ListOfLookahead<AttributeValueListEntry, ",", "]"> "]"
@@ -203,7 +213,6 @@ NaoRules {
 
 	// TODO(adamb) Implement these next!
 	above = "^" ~identifierPart
-	following = "->"
 	reverseComposition = "|>"
 	here = "."
 

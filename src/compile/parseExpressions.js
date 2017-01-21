@@ -96,9 +96,29 @@ function createSemantics(grammar) {
   s.addAttribute(
     'asJson',
     {
+      Program: function(importDecls, topLevelDecls) {
+        return [...importDecls.asJson, ...topLevelDecls.asJson];
+      },
+      ImportDeclaration: function(_, body) {
+        return ["_sf_import", body.asJson];
+      },
+      ImportDeclarationBody_single: function(spec) {
+        return [spec.asJson];
+      },
+      ImportDeclarationBody_multi: function(_1, _2, specs, _3, _4, _5) {
+        return specs.asJson;
+      },
+      ImportSpec: function(packageName, importPath, _) {
+        var pathFragments = importPath.asJson.split("/");
+        var name = packageName.asJson[0];
+        if (!name) {
+          name = pathFragments[pathFragments.length - 1];
+        }
+        return [name, pathFragments];
+      },
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },
-      stringExpression: function(_1, chars, _2) { return chars.sourceString; },
+      stringLiteral: function(_1, chars, _2) { return chars.sourceString; },
       EmptyListOf: function() { },
       nonemptyListOfLookaheadEntry: function(_1, elem1, _2, _3, _4, moreElems, _6, _7) {
         return [elem1.asJson].concat(moreElems.asJson);
@@ -318,6 +338,12 @@ function createSemantics(grammar) {
       },
       indexSuffix: function(_, identifier) {
         return identifier.asJson;
+      },
+      indexIdentifier: function(identifier) {
+        return identifier.asJson;
+      },
+      indexNumber: function(digits) {
+        return ["_sf_whole", digits.sourceString];
       },
       Expression5: function(subexpr, indexSuffix) {
         var suffix = indexSuffix.asJson[0];

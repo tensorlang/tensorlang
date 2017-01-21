@@ -10,7 +10,7 @@ module.exports = {
       "../bin/python",
       [
         `${__dirname}/cli.py`,
-        "--graphdef", "/dev/stdin",
+        "--metagraphdef", "/dev/stdin",
         "--run"
       ],
       graph
@@ -22,7 +22,7 @@ module.exports = {
         "../bin/python",
         [
           `${__dirname}/cli.py`,
-          "--graphdef", file,
+          "--metagraphdef", file,
           ...(binary ? ["--binaryGraphdef"] : []),
           "--run"
         ],

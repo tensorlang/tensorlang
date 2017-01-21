@@ -18,7 +18,7 @@ module.exports = {
       [
         `${__dirname}/cli.py`,
         "--input-json", "/dev/stdin",
-        "--output-graph", "/dev/stdout",
+        "--output-metagraphdef", "/dev/stdout",
       ],
       JSON.stringify(expressions)
     );
@@ -37,7 +37,7 @@ module.exports = {
         [
           `${__dirname}/cli.py`,
           "--input-json", "/dev/stdin",
-          ...(output ? ["--output-graph", output] : []),
+          ...(output ? ["--output-metagraphdef", output] : []),
           ...(binary ? ["--output-binary"] : [])
         ],
         JSON.stringify(expressions),

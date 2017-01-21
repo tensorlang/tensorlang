@@ -1,7 +1,10 @@
 import copy
 import sys
 
+from functools import reduce
+
 import tensorflow as tf
+from tensorflow.python.framework import meta_graph
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -12,16 +15,16 @@ class RetvalBag:
 
     for k, v in a_dict.items():
       if type(v) == RetvalBag:
-        raise "Can't put a RetvalBag into another. %s" % a_dict
+        raise Exception("Can't put a RetvalBag into another. %s" % a_dict)
       self._d[k] = v
 
   def get(self, key):
     if key == None:
       l = len(self._d)
       if l == 0:
-        raise "Can't get default retval for an empty RetvalBag"
+        raise Exception("Can't get default retval for an empty RetvalBag")
       if l > 1:
-        raise "Can't get default retval a RetvalBag with more than one entry: %s" % self._d
+        raise Exception("Can't get default retval a RetvalBag with more than one entry: %s" % self._d)
       key = list(self._d.keys())[0]
 
     return self._d[key]
@@ -190,10 +193,10 @@ class DeclaredFunction:
 
 
 class Context:
-  def __init__(self, global_namespaces, parent=None):
+  def __init__(self, parent=None):
     self._parent = parent
     self._functions = {}
-    self._namespaces = global_namespaces
+    self._namespaces = {}
     self._attrs = {}
     self._locals = {}
     self._root_suffixes = {}
@@ -201,7 +204,7 @@ class Context:
     self._above = None
 
   def subcontext(self):
-    return Context(self._namespaces, parent=self)
+    return Context(parent=self)
 
   def duplicate(self):
     ctx = copy.copy(self)
@@ -211,6 +214,11 @@ class Context:
 
   def set_above(self, value):
     self._above = value
+
+  def set_namespace(self, name, value):
+    if name in self._namespaces:
+      raise Exception("Namespace already defined: %s" % name)
+    self._namespaces[name] = value
 
   def namespace_lookup(self, ns_name, key):
     if ns_name in self._namespaces:
@@ -319,8 +327,7 @@ class TopLevel:
 
   def __init__(self):
     self.nesting_level = 0
-    self._global_functions = {}
-    self._global_namespaces = {
+    self._builtin_namespaces = {
       "tf": tf,
       "nao": Nao(),
     }
@@ -387,9 +394,7 @@ class TopLevel:
 
     args = []
     for expr in arg_exprs:
-      arg = self.visit(ctx, expr)
-      if type(arg) == RetvalBag:
-        arg = arg.get(None)
+      arg = self.__unwrap_bag(self.visit(ctx, expr))
       ctx.eliminate_leaf(arg)
       # eprint("arg %s -> %s" % (expr, arg))
       args.append(arg)
@@ -400,8 +405,7 @@ class TopLevel:
     else:
       function = ctx.get_local(fn_name)
 
-    if type(function) == RetvalBag:
-      function = function.get(None)
+    function = self.__unwrap_bag(function)
 
     scope_name = name
     if scope_name == None:
@@ -509,9 +513,13 @@ class TopLevel:
         op = local_ops.get_local(retval_name)
         tf.identity(op, name=retval_name)
 
-  def _sf_index(self, ctx, expr, index):
+  def _sf_index(self, ctx, expr, index_expr):
+    index = self.visit(ctx, index_expr)
     target = self.visit(ctx, expr)
-    return target.get(index)
+    if type(target) == RetvalBag:
+      return target.get(index)
+
+    return target[index]
 
   def _sf_def_function(self, ctx, name, *rest):
     ctx.set_function(name, DeclaredFunction(ctx.subcontext(), [name, *rest]))
@@ -529,6 +537,17 @@ class TopLevel:
     for name, value_expr in attr_exprs:
       attrs[name] = self.visit(ctx, value_expr)
     return attrs
+
+  def _sf_import(self, ctx, name_pairs):
+    # HACK(adamb) At the moment, assume that we're only talking about python)
+    for name, package_fragments in name_pairs:
+      ns = reduce(
+        lambda p, n: getattr(p, n),
+        package_fragments[1:],
+        {"tf": tf}[package_fragments[0]]
+      )
+
+      ctx.set_namespace(name, ns)
 
   def visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
@@ -553,11 +572,14 @@ class TopLevel:
       self.nesting_level = self.nesting_level - 1
       return expr
 
-def graph_def_from_exprs(exprs):
+def meta_graph_def_from_exprs(exprs):
   with tf.Graph().as_default() as g:
     visitor = TopLevel()
-    ctx = Context(visitor._global_namespaces)
+    ctx = Context()
+    for name, ns in visitor._builtin_namespaces.items():
+      ctx.set_namespace(name, ns)
+
     for expr in exprs:
       visitor.visit(ctx, expr)
 
-    return g.as_graph_def()
+    return meta_graph.export_scoped_meta_graph()[0]

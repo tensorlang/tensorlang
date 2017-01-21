@@ -1,6 +1,6 @@
-def find_nodes_with_pattern(graph_def, pattern):
+def find_nodes_with_pattern(graph, pattern):
   node_matches = []
-  for n in graph_def.node:
+  for n in graph.get_operations():
     m = pattern.match(n.name)
     if m:
       node_matches.append((n, m))
