@@ -65,6 +65,8 @@ testCases.forEach(
         return;
       }
 
+      t.comment(tc.source);
+
       function checkText(text) {
         if (tc.match) {
           if (!text.match(tc.match)) {
@@ -87,7 +89,7 @@ testCases.forEach(
       .then(
         (str) => {
           checkText(str);
-          t.assert(!shouldFail, "Test should have failed");
+          t.assert(!shouldFail, `Test should fail`);
           t.end();
         }
       )
@@ -96,7 +98,7 @@ testCases.forEach(
           checkText(err.message);
 
           if (!shouldFail) {
-            t.error(err);
+            t.error(err, `Test shouldn't fail`);
           }
           t.end();
         }

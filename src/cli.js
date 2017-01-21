@@ -14,7 +14,7 @@ const opts = meow(`
 `,
   {
     string: [
-      'source',                // --source "graph agraph { const one scalar float = 1 }"
+      'source',                // --source "graph agraph { one = 1 }"
       'compile',               // --compile foo.pbtxt
       'use-graph',             // --use-graph file.pbtxt
       // Path to GraphDef protobuf with constants to feed

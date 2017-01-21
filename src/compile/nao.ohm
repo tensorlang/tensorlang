@@ -10,21 +10,27 @@ NaoRules {
 	ImportPath = stringLiteral
 
 	TopLevelDecl
-	  = FuncDefinition
+	  = FunctionDeclaration
 		| GraphDefinition
 
-	FuncDefinition = #(func ws+ identifier) "{" nl* FuncBody "}" nl*
-	FuncBody = FuncElement*
-	FuncElement =
-	    ( InputDeclaration
-	    | OutputDeclaration
+	FunctionDeclaration = #(func ws+ identifier) FunctionSignature FunctionBlock
+	FunctionLiteral = func FunctionSignature FunctionBlock
+	FunctionTypeLiteral = func FunctionSignature
+	FunctionSignature = FunctionAttributes? FunctionInputs
+	FunctionAttributes = "[" FunctionParameters<FunctionAttributeType, "]"> "]"
+	FunctionAttributeType = AttributeType? (">=" integer)? ("=" AttributeValue)?
+	FunctionInputs = "(" FunctionParameters<TensorKind, ")"> ")"
+	FunctionParameters<type, la> = ListOfLookahead<FunctionParameter<type>, ",", la>
+	FunctionParameter<type> = identifier type?
+	FunctionBlock = "{" nl* FunctionBody "}" nl*
+	FunctionBody = FunctionElement*
+	FunctionElement =
+	    ( OutputDeclaration
 	    | Assignment
-	    | AttributeDeclaration
 	    | AfterStatement
 	    | Expression
 	    ) #sc
 
-	FuncLiteral = func "{" nl* FuncBody "}" nl*
 
 	GraphDefinition = #(graph ws+ identifier) "{" nl* GraphBody "}" nl*
 	GraphBody = GraphElement*
@@ -37,19 +43,15 @@ NaoRules {
 	    ) #sc
 
 	InputGlyph = "->" | "\u2192"
-	OutputGlyph = "<-" | "\u2190"
-	AttributeGlyph = "@>" | "@@" | "attr" | "attribute"
+	OutputGlyph = "<-" | "\u2190" | "emit"
 
-	AttributeDeclaration = AttributeGlyph identifier AttributeType? (equal AttributeValue)?
 	AttributeType
-	  = FuncTypeLiteral
+	  = FunctionTypeLiteral
 	  | TensorKind
 	  | identifier
-	TensorKind = TensorShape TensorType
+	TensorKind = TensorType TensorShape?
 	TensorShape
-	  = "?" -- unknown
-      | scalar -- scalar
-	  | "<" ListOfLookahead<(number | "?"), ",", ">"> ">" -- literal
+	  = "<" ListOfLookahead<(number | "?"), ",", ">"> ">" -- literal
 	TensorType =
 	  | float
 	  | double
@@ -125,6 +127,7 @@ NaoRules {
 	number  (a number)
 	  = (("+" | "-") ws*)? digit* "." digit+ "j"? -- fract
 	  | (("+" | "-") ws*)? digit+ "j"?            -- whole
+	integer (an integer) = digit+
 
 	char        =  escape
 	              |  ~"\\" ~"\"" ~"'" ~"\n" any
@@ -181,7 +184,7 @@ NaoRules {
 	AttributeName = identifier
 	AttributeValue
 	  = AttributeValueList
-	  | FuncLiteral
+	  | FunctionLiteral
 	  | TensorShape
 		| Expression
 
@@ -203,16 +206,9 @@ NaoRules {
 	  = TensorLiteral
 	  | TensorShape
 
-	type = "type"
-	FuncTypeLiteral = func "(" ListOfLookahead<FuncTypeLiteralEntry, ",", ")"> ")"
-	FuncTypeLiteralEntry
-	  = InputDeclaration
-	  | OutputTypeDeclaration
-	  | AttributeDeclaration
-
 	// TODO(adamb) Implement these next!
 	above = "^" ~identifierPart
-	reverseComposition = "|>"
+	reverseComposition = "->"
 	here = "."
 
 	// Convenience rules for keywords

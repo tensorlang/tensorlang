@@ -9,7 +9,7 @@ module.exports = [
     source: `graph testAssert {
   tf.Assert(false, {"Assertion failed!"})
 
-  after __leaves { ← result scalar int8 = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 `,
     match: /Assertion failed!/,
@@ -20,7 +20,7 @@ module.exports = [
     source: `graph testAssert {
   tf.Assert(true, {"Assertion failed!"})
 
-  after __leaves { ← result scalar int8 = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 `,
     antimatch: /Assertion failed!/,

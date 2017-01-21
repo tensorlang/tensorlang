@@ -1,5 +1,4 @@
-func identityBool {
-  → z
+func identityBool(z) {
   ← z
 }
 
@@ -7,12 +6,12 @@ graph testIdentityBool {
   x = true
   tf.Assert(identityBool(x), {""})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 
-func doubleSum {
-  -> a
-  -> b
+// split
+
+func doubleSum(a, b) {
   <- c = a + b * 2.0 + a
 }
 
@@ -21,8 +20,10 @@ graph testSum {
   y = 3.0
   tf.Assert(8.0 == doubleSum(x, y), {""})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
+
+// split
 
 graph testComparisons {
   tf.Assert(0 == 1 - 1 + 1 - 1 + 1 - 1, {"0 == 1 - 1 + 1 - 1 + 1 - 1"})
@@ -41,11 +42,12 @@ graph testComparisons {
   tf.Assert(false == 0 >= 1, {"false == 0 >= 1"})
   tf.Assert(false == 0 > 1, {"false == 0 > 1"})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 
-func bifurcate {
-  -> x
+// split
+
+func bifurcate(x) {
   <- out1 = x
   <- out2 = x + 0.0
 }
@@ -55,12 +57,12 @@ graph testBifurcate {
   tf.Assert(1.0 == b:out1, {"1.0 == b:out1"})
   tf.Assert(b:out2 == b:out1, {"b:out2 == b:out1"})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 
-func max {
-  -> a
-  -> b
+// split
+
+func max(a, b) {
   <- c = if a > b {
     tf.identity(a)
   } else {
@@ -72,25 +74,24 @@ graph testMax {
   tf.Assert(1.0 == max(0.1, 1.0), {"1.0 == max(0.1, 1.0)"})
   tf.Assert(1.0 == max(1.0, 0.1), {"1.0 == max(1.0, 0.1)"})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 
-func attrOutput {
-  @@ c = 1
+// split
+
+func attrOutput[c]() {
   <- c
 }
 
 graph testAttrOutput {
   tf.Assert(1 == attrOutput[c: 1](), {""})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
 
-func applyFnToSum {
-  @@ f
-  @@ a
-  -> b
+// split
 
+func applyFnToSum[f, a](b) {
   <- result = f(a + b)
 }
 
@@ -101,54 +102,51 @@ graph testFnAttr {
 
   applyFnToSum[
     a: one,
-    f: func {
-      -> x
+    f: func(x) {
       <- result = x * three
     },
   ](two) -- result
 
   tf.Assert(9.0 == result, {"9.0 == result", result})
 
-  after __leaves { ← r2 = tf.identity(0) }
+  after __leaves { ← r2 = 0 }
 }
 
-func increment {
-  -> a
+// split
+
+func increment(a) {
   <- result = a + 1.0
 }
 
-func decrementBy {
-  -> a
-  -> b
+func decrementBy(a, b) {
   <- result = a - b
 }
 
-func doubler {
-  -> a
+func doubler(a) {
   <- result = a * 2.0
 }
 
-func incrementDoubler {
-  -> a
+func incrementDoubler(a) {
+  a
   increment(^)
   doubler(^)
   <- result = ^
 }
 
 graph testArrows {
-  1.0 |> increment(.) |> doubler(.) -- r0
+  1.0 -> increment(.) -> doubler(.) -- r0
   tf.Assert(4.0 == r0, {"Problem with pipe arrow and dot"})
 
-  1.0 |> increment(.) |> decrementBy(123.0, .) -- r1
+  1.0 -> increment(.) -> decrementBy(123.0, .) -- r1
   tf.Assert(121.0 == r1, {"Problem with pipe arrow dot in second position"})
 
-  2.0 |> decrementBy(3.0 |> doubler(.), .) -- r2
+  2.0 -> decrementBy(3.0 -> doubler(.), .) -- r2
   tf.Assert(4.0 == r2, {"Problem with nested pipe arrow"})
 
-  1.0 |> decrementBy(., -3.0) |> doubler(.) -- r3
+  1.0 -> decrementBy(., -3.0) -> doubler(.) -- r3
   tf.Assert(8.0 == r3, {"Problem with pipe arrow and multiple args"})
 
-  1.0 |> increment |> doubler -- r4
+  1.0 -> increment -> doubler -- r4
   tf.Assert(4.0 == r4, {"Problem with pipe arrow"})
 
   1.0
@@ -160,8 +158,10 @@ graph testArrows {
   incrementDoubler(5.0)
   tf.Assert(12.0 == ^, {"Problem with up arrow"})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }
+
+// split
 
 graph testLoop {
   for x = 1; x <= 5 {
@@ -170,5 +170,5 @@ graph testLoop {
 
   tf.Assert(out:x == 6, {"out:x == 6"})
 
-  after __leaves { ← result = tf.identity(0) }
+  after __leaves { ← result = 0 }
 }

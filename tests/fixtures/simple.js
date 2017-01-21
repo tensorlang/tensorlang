@@ -3,10 +3,10 @@
 
 const fs = require('fs');
 
-module.exports = [
+const toExport: any = [
   {
     name: "basic graph",
-    source: `graph main { <- one scalar float = 1.0 }`,
+    source: `graph main { <- one = 1.0 }`,
     expect: `node {
   name: "one"
   op: "Const"
@@ -33,11 +33,20 @@ versions {
 }
 `
   },
-  // TODO(adamb) Should error on unused expression
-  // TODO(adamb) Should error if any function has invalid contents (not only used ones).
-  {
-    name: "simple constructions",
-    action: "test",
-    source: fs.readFileSync(`${__dirname}/simple.nao`).toString(),
-  }
 ];
+
+// TODO(adamb) Should error on unused expression
+// TODO(adamb) Should error if any function has invalid contents (not only used ones).
+const simpleSource = fs.readFileSync(`${__dirname}/simple.nao`).toString()
+simpleSource.split("// split").forEach(function(chunk, ix) {
+  toExport.push(
+    {
+      name: `simple construction ${ix.toString()}`,
+      action: "test",
+      source: chunk.trim(),
+    }
+  );
+})
+
+
+module.exports = toExport;

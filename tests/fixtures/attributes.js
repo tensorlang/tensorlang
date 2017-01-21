@@ -5,17 +5,14 @@ module.exports = [
   {
     name: "require attribute ellipsis",
     fails: true,
-    source: `func lotsOfAttributes {
-      @@ a
-      @@ b
-
-      <- result scalar float = a + b
+    source: `func lotsOfAttributes[a, b]() {
+      <- result = a + b
     }
 
     graph testAttributes {
       lotsOfAttributes[a: 1.0] -- foo
       foo[b: 2.0]  -- bar
-      <- result scalar float = bar()
+      <- result = bar()
     }
 `,
     action: "test",
@@ -24,15 +21,12 @@ module.exports = [
   {
     name: "forbid attribute ellipsis in apply",
     fails: true,
-    source: `func lotsOfAttributes {
-      @@ a
-      @@ b
-
-      <- result scalar float = a + b
+    source: `func lotsOfAttributes[a, b]() {
+      <- result = a + b
     }
 
     graph main {
-      <- result scalar float = lotsOfAttributes[a: 1.0, b: 2.0, ...]()
+      <- result = lotsOfAttributes[a: 1.0, b: 2.0, ...]()
     }
 `,
   },
@@ -41,30 +35,22 @@ module.exports = [
     action: "test",
     fails: true,
     match: /already defined/,
-    source: `func lotsOfAttributes {
-      @@ a
-      @@ b
-      @@ c
-
-      <- result scalar float = a + b + c
+    source: `func lotsOfAttributes[a, b, c]() {
+      <- result = a + b + c
     }
 
     graph testAttributes {
       lotsOfAttributes[a: 1.0, b: 2.0, ...] -- foo
       foo[b: 3.0, c: 4.0] -- bar
 
-      after __leaves { ← result scalar int8 = tf.identity(0) }
+      after __leaves { ← result = 0 }
     }
 `,
   },
   {
     name: "use attribute ellipsis",
-    source: `func lotsOfAttributes {
-      @@ a
-      @@ b
-      @@ c
-
-      <- result scalar float = a + b + c
+    source: `func lotsOfAttributes[a, b, c]() {
+      <- result = a + b + c
     }
 
     graph testAttributes {
@@ -73,7 +59,7 @@ module.exports = [
 
       tf.Assert(6.0 == bar(), {"Assertion failed!"})
 
-      after __leaves { ← result scalar int8 = tf.identity(0) }
+      after __leaves { ← result = 0 }
     }
 `,
     action: "test",

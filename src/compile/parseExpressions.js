@@ -31,18 +31,11 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
   });
 }
 
-function processFunctionBody(body) {
+function processFunctionBody(signature, body) {
   var retvals = [];
-  var args = [];
-  var attrs = [];
-  var expressions = body.asJson.map(function(expr, ix, exprs) {
-    if (expr[0] === "_named_placeholder") {
-      var sub = expr.slice(1);
-      args.push(sub);
-      var argName = expr[1];
-      return ["_sf_local", argName];
-    }
+  var [attributes, inputs] = signature;
 
+  var expressions = body.map(function(expr, ix, exprs) {
     if (expr[0] === "__retval") {
       var retName = expr[1];
       var retVal = expr[2];
@@ -56,18 +49,10 @@ function processFunctionBody(body) {
       return retVal;
     }
 
-    if (expr[0] === "__attr_decl") {
-      var attrName = expr[1];
-      var attrType = expr[2];
-      var attrInitialValue = expr[3];
-      attrs.push([attrName, attrType, attrInitialValue]);
-      return ["_sf_attr", attrName];
-    }
-
     return expr;
   });
 
-  return [attrs, args, retvals].concat(expressions);
+  return [attributes, inputs, retvals].concat(expressions);
 }
 
 function replaceHereExpression(expr: any[], callback: (any[]) => void) {
@@ -154,9 +139,7 @@ function createSemantics(grammar) {
           return acc ? acc.concat(cur) : cur;
         });
       },
-      TensorKind: function(shape, type) { return ["kind", shape.asJson, type.asJson]; },
-      TensorShape_unknown: function(_) { return ["_sf_shape", null]; },
-      TensorShape_scalar: function(_) { return ["_sf_shape", []]; },
+      TensorKind: function(type, shape) { return ["kind", shape.asJson, type.asJson]; },
       TensorShape_literal: function(_1, dims, _2) { return ["_sf_shape", dims.asJson]; },
       TensorType: function(name) { return ["_sf_type", name.sourceString]; },
 
@@ -203,13 +186,45 @@ function createSemantics(grammar) {
         return ["_named_tensor", null, null, null, child.asJson];
       },
 
-      FuncLiteral: function(_1, _2, _3, body, _4, _5) {
-        return ["_sf_function", null].concat(processFunctionBody(body));
+      FunctionLiteral: function(_, signature, block) {
+        return ["_sf_function", null].concat(
+          processFunctionBody(signature.asJson, block.asJson));
       },
-      FuncDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
-        return ["_sf_def_function", name.asJson].concat(processFunctionBody(body));
+      FunctionSignature: function(attributes, inputs) {
+        return [attributes.asJson[0], inputs.asJson];
       },
-      FuncElement: function(decl, _) {
+      FunctionParameter: function(name, type) {
+        return [name.asJson, type.asJson];
+      },
+      FunctionAttributeType: function(type, _1, minValue, _2, initialValue) {
+        return null;
+      },
+      FunctionAttributes: function(_1, parameters, _2) {
+        return parameters.asJson.map(function(parameter) {
+          // TODO(adamb) Actually use type in the future.
+          // [attrName, attrType, attrInitialValue]
+
+          var [name, type] = parameter;
+          return [name, null, null];
+        })
+      },
+      FunctionInputs: function(_1, parameters, _2) {
+        var params = parameters.asJson || [];
+        return params.map(function(parameter) {
+          var [name, kind] = parameter;
+          var shape = kind && kind[0];
+          var type = kind && kind[1];
+          return [name, shape, type];
+        });
+      },
+      FunctionDeclaration: function(_1, _2, name, signature, block) {
+        return ["_sf_def_function", name.asJson].concat(
+          processFunctionBody(signature.asJson, block.asJson));
+      },
+      FunctionBlock: function(_1, _2, body, _3, _4) {
+        return body.asJson;
+      },
+      FunctionElement: function(decl, _) {
         return decl.asJson;
       },
       GraphDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
@@ -381,9 +396,6 @@ function createSemantics(grammar) {
       },
       Expression6_hereRef: function(_) {
         return ["__sf_here"];
-      },
-      AttributeDeclaration: function(_1, name, type, _2, value) {
-        return ["__attr_decl", name.asJson, type.asJson[0], value.asJson[0]];
       },
       AttributeBlock: function(_1, _2, list, _3, _4) {
         return ["_sf_attrs", ...list.asJson];
