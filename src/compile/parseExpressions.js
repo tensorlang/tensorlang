@@ -90,6 +90,31 @@ function replaceHereExpression(expr: any[], callback: (any[]) => void) {
   }
 }
 
+function rewriteExpressionWithName(name: string, expr: any[]): any[] {
+  var exprType = expr[0];
+  switch (exprType) {
+  case "_sf_local":
+  case "_sf_attr":
+  case "_sf_index":
+  case "_sf_cond":
+  case "__sf_here":
+  case "_sf_list":
+  case "_sf_while_loop":
+    return ["_sf_define_local", name, expr];
+
+  case "_sf_function_lookup":
+  case "_named_tensor":
+  case "_sf_apply":
+  case "_named_apply":
+    expr[1] = name;
+    break;
+  default:
+    throw new Error("Unhandled child expression type: " + exprType);
+  }
+
+  return expr;
+}
+
 function createSemantics(grammar) {
   var s = grammar.createSemantics();
   var anonIncrement = 0;
@@ -203,6 +228,9 @@ function createSemantics(grammar) {
       AfterStatement: function(_1, _2, _3, _4, _5, body, _6, _7) {
         return ["__sf_after_leaves"].concat(body.asJson);
       },
+      Assignment: function(name, _1, _2, _3, _4, rhs) {
+        return rewriteExpressionWithName(name.asJson, rhs.asJson);
+      },
       Expression: function(child, _1, _2, _3, nameExpr) {
         var childExpr = child.asJson;
         var name = nameExpr.asJson[0];
@@ -210,28 +238,7 @@ function createSemantics(grammar) {
           return childExpr;
         }
 
-        var childExprType = childExpr[0];
-        switch (childExprType) {
-        case "_sf_local":
-        case "_sf_attr":
-        case "_sf_index":
-        case "_sf_cond":
-        case "__sf_here":
-        case "_sf_list":
-        case "_sf_while_loop":
-          return ["_sf_define_local", name, childExpr];
-
-        case "_sf_function_lookup":
-        case "_named_tensor":
-        case "_sf_apply":
-        case "_named_apply":
-          childExpr[1] = name;
-          break;
-        default:
-          throw new Error("Unhandled child expression type: " + childExprType);
-        }
-
-        return childExpr;
+        return rewriteExpressionWithName(name, childExpr);
       },
       NonemptyListOf: function(elem, sep, rest) {
         var ops = sep.asJson;
@@ -411,14 +418,6 @@ function createSemantics(grammar) {
       },
       InputDeclaration: function(_, name, kind) {
         return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
-      },
-      ConstantDeclaration: function(_1, name, kind, _2, tensorLiteral) {
-        var childExpr = [].concat(tensorLiteral.asJson);
-        childExpr[1] = name.sourceString;
-        childExpr[2] = kind.asJson[1]; // shape
-        childExpr[3] = kind.asJson[2]; // dtype
-
-        return childExpr;
       },
       OutputDeclaration: function(_1, name, kind, _2, expr) {
         var rhsValue = expr.asJson[0];

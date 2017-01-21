@@ -18,7 +18,7 @@ NaoRules {
 	FuncElement =
 	    ( InputDeclaration
 	    | OutputDeclaration
-	    | ConstantDeclaration
+	    | Assignment
 	    | AttributeDeclaration
 	    | AfterStatement
 	    | Expression
@@ -31,7 +31,7 @@ NaoRules {
 	GraphElement =
 	    ( InputDeclaration
 	    | OutputDeclaration
-	    | ConstantDeclaration
+	    | Assignment
 	    | AfterStatement
 	    | Expression
 	    ) #sc
@@ -39,8 +39,6 @@ NaoRules {
 	InputGlyph = "->" | "\u2192"
 	OutputGlyph = "<-" | "\u2190"
 	AttributeGlyph = "@>" | "@@" | "attr" | "attribute"
-
-	ConstantDeclaration = const identifier TensorKind equal TensorLiteral
 
 	AttributeDeclaration = AttributeGlyph identifier AttributeType? (equal AttributeValue)?
 	AttributeType
@@ -69,8 +67,8 @@ NaoRules {
 	  | qint32
 	  | quint
 
-	InputDeclaration = InputGlyph identifier TensorKind
-	OutputDeclaration = OutputGlyph identifier (TensorKind equal Expression)?
+	InputDeclaration = InputGlyph identifier TensorKind?
+	OutputDeclaration = OutputGlyph identifier (TensorKind? equal Expression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
 
 	AfterStatement = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
@@ -134,6 +132,7 @@ NaoRules {
 	stringLiteral (a string)
 	   =  "\"" (char | "\'")* "\""
 
+  Assignment = #(identifier ws+) TensorKind? #("=" ws+) Expression
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
 	Expression1 = NonemptyListOf<Expression2, reverseComposition>
 	Expression2 = NonemptyListOf<Expression3, relop>
@@ -156,7 +155,7 @@ NaoRules {
 	IfExpression = #("if" ws+) Expression "{" nl* Expression #sc "}" "else" "{" nl* Expression #sc "}"
 
 	ForExpression = #("for" ws+) ForInitializers ForCondition ForBody
-	ForInitializers = (Expression #sc)+
+	ForInitializers = (Assignment #sc)+
 	ForCondition = Expression
 	ForBody = "{" nl* (ForBodyExpression #sc)+ "}"
 	ForBodyExpression
