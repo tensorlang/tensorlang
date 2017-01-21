@@ -288,7 +288,7 @@ function createSemantics(grammar) {
       IfExpression: function(_1, _2, cond, _3, _4, thenClause, _5, _6, _7, _8, _9, elseClause, _10, _11) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
-      ForExpression: function(_1, _2, initializers, condition, body) {
+      RecExpression: function(_1, _2, initializers, condition, body) {
         var retvals = [];
         var bodyExprs = body.asJson.map(function(expr) {
           if (expr[0] === "__retval") {
@@ -313,10 +313,10 @@ function createSemantics(grammar) {
           initializers.asJson,
         ];
       },
-      ForInitializers: function(exprs, _2) {
+      RecInitializers: function(exprs, _2) {
         return exprs.asJson;
       },
-      ForBody: function(_1, _2, exprs, _4, _5) {
+      RecBody: function(_1, _2, exprs, _4, _5) {
         return exprs.asJson;
       },
       Expression1: function(subexpr) {

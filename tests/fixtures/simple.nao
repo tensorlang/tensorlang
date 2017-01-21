@@ -164,7 +164,7 @@ graph testArrows {
 // split
 
 graph testLoop {
-  for x = 1; x <= 5 {
+  rec x = 1; x <= 5 {
     <- x = x + 1
   } -- out
 
