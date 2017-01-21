@@ -9,6 +9,16 @@ function loadGrammar() {
   return ohm.grammar(grammarText);
 }
 
+function nsApply(nsName, fnName, ...args) {
+  return [
+    "_named_apply",
+    null,
+    ["_sf_namespace_lookup", nsName, fnName],
+    null,
+    ...args
+  ];
+}
+
 function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string }): any[] {
   var [ops, ...exprs] = expr;
 
@@ -27,7 +37,7 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
       throw new Error("Unknown operator: " + op);
     }
 
-    return ["_sf_apply", null, "tf", method, null, e, acc];
+    return nsApply("tf", method, e, acc);
   });
 }
 
@@ -62,11 +72,11 @@ function replaceHereExpression(expr: any[], callback: (any[]) => void) {
       callback(expr);
       break;
     case "_sf_local":
+    case "_sf_namespace_lookup":
     case "_sf_attr":
     case "_sf_index":
     case "_sf_cond":
     case "_sf_function":
-    case "_sf_def_function":
       // Do not recurse within these.
       break;
     default:
@@ -85,11 +95,10 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
   case "__sf_here":
   case "_sf_list":
   case "_sf_while_loop":
+  case "apply_attrs":
     return ["_sf_define_local", name, expr];
 
-  case "_sf_function_lookup":
   case "_named_tensor":
-  case "_sf_apply":
   case "_named_apply":
     expr[1] = name;
     break;
@@ -99,6 +108,19 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
 
   return expr;
 }
+
+function doLookup(ns, identifier) {
+  var result;
+
+  if (ns) {
+    result = ["_sf_namespace_lookup", ns, identifier];
+  } else {
+    result = ["_sf_local", identifier];
+  }
+
+  return result;
+}
+
 
 function createSemantics(grammar) {
   var s = grammar.createSemantics();
@@ -185,10 +207,16 @@ function createSemantics(grammar) {
       TensorLiteral: function(child) {
         return ["_named_tensor", null, null, null, child.asJson];
       },
-
       FunctionLiteral: function(_, signature, block) {
         return ["_sf_function", null].concat(
           processFunctionBody(signature.asJson, block.asJson));
+      },
+      FunctionDeclaration: function(_1, _2, name, signature, block) {
+        return [
+          "_sf_define_local", name.asJson,
+          ["_sf_function", name.asJson].concat(
+            processFunctionBody(signature.asJson, block.asJson))
+        ];
       },
       FunctionSignature: function(attributes, inputs) {
         return [attributes.asJson[0], inputs.asJson];
@@ -216,10 +244,6 @@ function createSemantics(grammar) {
           var type = kind && kind[1];
           return [name, shape, type];
         });
-      },
-      FunctionDeclaration: function(_1, _2, name, signature, block) {
-        return ["_sf_def_function", name.asJson].concat(
-          processFunctionBody(signature.asJson, block.asJson));
       },
       FunctionBlock: function(_1, _2, body, _3, _4) {
         return body.asJson;
@@ -307,14 +331,20 @@ function createSemantics(grammar) {
             return e;
           }
 
-          // If the accumulated expression is foo(), it's a _sf_apply.
-          // Recurse down its expressions and replace any ["."] with ["_sf_local", "anonResultN"].
-          // Stop recursing further when we encounter a
-          if (e[0] !== "_sf_apply") {
-            return ["_named_apply", null, e, acc];
+          // If the accumulated expression is foo(), it's a _named_apply.
+          // Recurse down its expressions and replace any ["__sf_here"]
+          // appropriately.
+          if (e[0] !== "_named_apply") {
+            return ["_named_apply", null, e, null, acc];
           } else {
             var previousName = "anon" + anonIncrement++;
-            var firstReference = ["_sf_apply", previousName, "tf", "identity", null, acc];
+            var firstReference = [
+              "_named_apply",
+              previousName,
+              ["_sf_namespace_lookup", "tf", "identity"],
+              null,
+              acc
+            ];
             var otherReferences = ["_sf_local", previousName];
 
             replaceHereExpression(
@@ -376,20 +406,19 @@ function createSemantics(grammar) {
         return ["_sf_index", subexpr.asJson, suffix];
       },
       Expression6_reference: function(ns, identifier, attrs) {
-        if (ns.asJson[0]) {
-          return ["_sf_namespace_lookup", ns.asJson[0], identifier.asJson, attrs.asJson[0]]
-        }
+        var result = doLookup(ns.asJson[0], identifier.asJson);
 
         if (attrs.asJson[0]) {
-          return ["_sf_function_lookup", null, identifier.asJson, attrs.asJson[0]]
+          return ["apply_attrs", result, attrs.asJson[0]];
         }
-
-        return ["_sf_local", identifier.sourceString];
+        return result;
       },
       Expression6_apply: function(ns, fn_name, attrs, _1, argList, _2) {
         return [
-          "_sf_apply", null, ns.asJson[0], fn_name.sourceString, attrs.asJson[0],
-        ].concat(argList.asJson);
+          "_named_apply", null,
+          doLookup(ns.asJson[0], fn_name.asJson),
+          attrs.asJson[0],
+          ...(argList.asJson || [])];
       },
       Expression6_aboveRef: function(_) {
         return ["_sf_local", "^"];
@@ -439,7 +468,7 @@ function createSemantics(grammar) {
         }
 
         if (rhsValue[0] !== ["_sf_local"]) {
-          rhsValue = ["_sf_apply", null, "tf", "identity", null, rhsValue];
+          rhsValue = nsApply("tf", "identity", rhsValue);
         }
 
         return ["__retval", name.asJson, rhsValue];

@@ -195,7 +195,6 @@ class DeclaredFunction:
 class Context:
   def __init__(self, parent=None):
     self._parent = parent
-    self._functions = {}
     self._namespaces = {}
     self._attrs = {}
     self._locals = {}
@@ -228,9 +227,6 @@ class Context:
     if self._parent:
       return self._parent.namespace_lookup(ns_name, key)
 
-  def set_function(self, name, fn):
-    self._functions[name] = fn
-
   def define_local(self, name, value):
     if name in self._locals:
       raise Exception("Local already defined: %s" % name)
@@ -257,9 +253,6 @@ class Context:
 
     if name in self._attrs:
       return self._attrs[name]
-
-    if name in self._functions:
-      return self._functions[name]
 
     if self._parent:
       return self._parent.get_local(name)
@@ -372,47 +365,25 @@ class TopLevel:
     ctx.define_local(name, op)
     return op
 
-  def _named_apply(self, ctx, name, fn, *args):
-    fn = self.__unwrap_bag(fn)
-
-    scope_name = name
-    if scope_name == None:
-      scope_name = ctx.unique_name(fn._name())
-
-    result = fn.apply(self, scope_name, None, args)
-
-    if name != None:
-      ctx.define_local(name, result)
-
-    return result
-
-  # applying a function
-  def _sf_apply(self, ctx, name, ns_name, fn_name, attrs_expr, *arg_exprs):
-    attrs = self.visit(ctx, attrs_expr)
+  def _named_apply(self, ctx, name, fn, attrs, *args):
     if attrs and '_ellipsis' in attrs:
       raise Exception("Can't use attribute ellipsis in function apply")
 
-    args = []
-    for expr in arg_exprs:
-      arg = self.__unwrap_bag(self.visit(ctx, expr))
-      ctx.eliminate_leaf(arg)
-      # eprint("arg %s -> %s" % (expr, arg))
-      args.append(arg)
-
-    function = None
-    if ns_name != None:
-      function = ctx.namespace_lookup(ns_name, fn_name)
-    else:
-      function = ctx.get_local(fn_name)
-
-    function = self.__unwrap_bag(function)
+    fn = self.__unwrap_bag(fn)
 
     scope_name = name
-    if scope_name == None:
-      scope_name = ctx.unique_name(fn_name)
-    result = function.apply(self, scope_name, attrs, args)
+    if scope_name == None and hasattr(fn, '_name'):
+      scope_name = ctx.unique_name(fn._name())
 
+    unwrapped_args = []
+    for arg in args:
+      arg = self.__unwrap_bag(arg)
+      ctx.eliminate_leaf(arg)
+      unwrapped_args.append(arg)
+
+    result = fn.apply(self, scope_name, attrs, unwrapped_args)
     ctx.possible_leaf(result)
+
     if name != None:
       ctx.define_local(name, result)
 
@@ -468,13 +439,11 @@ class TopLevel:
     # eprint(ctx)
     return ctx.get_local(name)
 
-  def _sf_function_lookup(self, ctx, name, fn_name, attrs_expr):
-    function = ctx.get_local(fn_name)
-    result = function.apply_attrs(self, self.visit(ctx, attrs_expr))
-    if name != None:
-      ctx.set_function(name, result)
+  def _sf_namespace_lookup(self, ctx, ns_name, fn_name):
+    return ctx.namespace_lookup(ns_name, fn_name)
 
-    return result
+  def apply_attrs(self, ctx, function, attrs):
+    return function.apply_attrs(self, attrs)
 
   def _sf_attr(self, ctx, name):
     # eprint(ctx)
@@ -520,9 +489,6 @@ class TopLevel:
       return target.get(index)
 
     return target[index]
-
-  def _sf_def_function(self, ctx, name, *rest):
-    ctx.set_function(name, DeclaredFunction(ctx.subcontext(), [name, *rest]))
 
   def _sf_function(self, ctx, name, *rest):
     return DeclaredFunction(ctx.subcontext(), [name, *rest])

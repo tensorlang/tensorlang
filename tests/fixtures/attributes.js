@@ -64,4 +64,20 @@ module.exports = [
 `,
     action: "test",
   },
+  {
+    name: "can't use ellipsis in function apply",
+    fails: true,
+    source: `func lotsOfAttributes[a, b, c]() {
+      <- result = a + b + c
+    }
+
+    graph testAttributes {
+      lotsOfAttributes[a: 1.0, b: 2.0, ...] -- foo
+      tf.Assert(6.0 == foo[c: 3.0, ...](), {"Assertion failed!"})
+
+      after __leaves { ← result = 0 }
+    }
+`,
+    action: "test",
+  },
 ];
