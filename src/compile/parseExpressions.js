@@ -93,8 +93,9 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
   case "_sf_index":
   case "_sf_cond":
   case "__sf_here":
-  case "_sf_list":
+  case "list":
   case "_sf_while_loop":
+  case "_sf_map":
   case "apply_attrs":
     return ["_sf_define_local", name, expr];
 
@@ -186,7 +187,7 @@ function createSemantics(grammar) {
       },
 
       ListLiteral: function(_1, elems, _2) {
-        return ["_sf_list"].concat(elems.asJson);
+        return ["list"].concat(elems.asJson);
       },
 
       TensorLiteralElement_false: function(_) {
@@ -202,7 +203,7 @@ function createSemantics(grammar) {
         return str.asJson;
       },
       TensorLiteralElement_arr: function(_1, elems, _2) {
-        return ["_sf_list"].concat(elems.asJson);
+        return ["list"].concat(elems.asJson);
       },
       TensorLiteral: function(child) {
         return ["_named_tensor", null, null, null, child.asJson];
@@ -413,12 +414,25 @@ function createSemantics(grammar) {
         }
         return result;
       },
-      Expression6_apply: function(ns, fn_name, attrs, _1, argList, _2) {
+      Expression6_applyPos: function(ns, fn_name, attrs, _1, argList, _2) {
         return [
           "_named_apply", null,
           doLookup(ns.asJson[0], fn_name.asJson),
           attrs.asJson[0],
           ...(argList.asJson || [])];
+      },
+      Expression6_applyKwd: function(ns, fn_name, attrs, _1, keywordArgs, _2) {
+        return [
+          "_named_apply_keywords", null,
+          doLookup(ns.asJson[0], fn_name.asJson),
+          attrs.asJson[0],
+          keywordArgs.asJson];
+      },
+      KeywordArguments: function(args) {
+        return ["_sf_map", ...args.asJson];
+      },
+      KeywordArgument: function(name, _1, _2, value) {
+        return [name.asJson, value.asJson];
       },
       Expression6_aboveRef: function(_) {
         return ["_sf_local", "^"];
@@ -427,7 +441,7 @@ function createSemantics(grammar) {
         return ["__sf_here"];
       },
       AttributeBlock: function(_1, _2, list, _3, _4) {
-        return ["_sf_attrs", ...list.asJson];
+        return ["_sf_map", ...list.asJson];
       },
       AttributeBlockWithEllipsis: function(_1, _2, list, _3, _4) {
         var entries = [];
@@ -446,9 +460,9 @@ function createSemantics(grammar) {
         });
 
         if (hasEllipsis) {
-          return ["_sf_attrs_with_ellipsis", ...entries];
+          return ["_sf_map", ["_ellipsis", true], ...entries];
         } else {
-          return ["_sf_attrs", ...entries];
+          return ["_sf_map", ...entries];
         }
       },
       AttributeList: function(list) {

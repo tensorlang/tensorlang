@@ -150,7 +150,8 @@ NaoRules {
 		| RecExpression
 		| above -- aboveRef
 		| here -- hereRef
-		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- apply
+		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- applyPos
+		| #(invocationNamespace? identifier) AttributeBlock? "(" KeywordArguments ")" -- applyKwd
 		| #(invocationNamespace? identifier) AttributeBlockWithEllipsis? -- reference
 
 	// TODO(adamb) Should actually allow multiple conditional expressions, taking the last one.
@@ -174,6 +175,10 @@ NaoRules {
 	mulop       =  "*" | "/"
 
 	invocationNamespace = identifier "."
+
+	KeywordArguments = nonemptyListOfLookahead<KeywordArgument, ",", ")">
+	KeywordArgument = ArgumentName #(":" ws+) Expression
+	ArgumentName = identifier
 
 	AttributeBlock = #("[" nl*) AttributeList<"]"> nl* "]"
 	AttributeList<la> = nonemptyListOfLookahead<AttributeEntry, ",", la>

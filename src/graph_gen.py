@@ -37,7 +37,7 @@ class PrimitiveFunction:
   def __init__(self, fn):
     self._fn = fn
 
-  def apply(self, visitor, name, kwargs, args):
+  def apply_kw(self, visitor, name, attrs, kwargs):
     if kwargs == None:
       kwargs = {}
 
@@ -46,9 +46,22 @@ class PrimitiveFunction:
       kwargs['name'] = name
 
     try:
-      return self._fn(*args, **kwargs)
+      return self._fn(**kwargs)
     except:
       raise Exception("Tried to call %s with args %s and kwargs %s"  % (self._fn, args, kwargs))
+
+  def apply(self, visitor, name, attrs, args):
+    if attrs == None:
+      attrs = {}
+
+    if name != None:
+      attrs = dict(attrs)
+      attrs['name'] = name
+
+    try:
+      return self._fn(*args, **attrs)
+    except:
+      raise Exception("Tried to call %s with args %s and attrs %s"  % (self._fn, args, attrs))
 
 class SyntheticFunction:
   def __init__(self, argnames, retnames, graphdef):
@@ -56,7 +69,17 @@ class SyntheticFunction:
     self._retnames = retnames
     self._graphdef = graphdef
 
-  def apply(self, visitor, scope_name, kwargs, args):
+  def apply_kw(self, visitor, name, attrs, kwargs):
+    retvals = tf.import_graph_def(
+      self._graphdef,
+      name=scope_name,
+      input_map=kwargs,
+      return_elements=self._retnames)
+
+    return RetvalBag(dict(zip(self._retnames, retvals)))
+
+  # TODO(adamb) Support attrs for synthetic functions!
+  def apply(self, visitor, scope_name, attrs, args):
     retvals = tf.import_graph_def(
       self._graphdef,
       name=scope_name,
@@ -168,7 +191,7 @@ class DeclaredFunction:
 
   # How to represent RemyCC in this system? Can we do this tables approach?
 
-  def apply(self, visitor, scope_name, attrs, args):
+  def _do_apply(self, visitor, scope_name, attrs, bind_args):
     returned = {}
     new_ctx = self._ctx.duplicate()
     if attrs != None:
@@ -177,8 +200,7 @@ class DeclaredFunction:
 
     with tf.variable_scope(scope_name):
       # preload locals with references to input operations
-      for arg, arg_name in zip(args, self._arg_names()):
-        new_ctx.define_local(arg_name, arg)
+      bind_args(new_ctx)
 
       # Need to visit expressions
       for expr in self._body():
@@ -190,6 +212,20 @@ class DeclaredFunction:
 
     # For now we only use the first retval
     return RetvalBag(returned)
+
+  def apply_kw(self, visitor, scope_name, attrs, kwargs):
+    def bind_args_by_name(new_ctx):
+      for arg_name, arg in kwargs.items():
+        new_ctx.define_local(arg_name, arg)
+
+    return self._do_apply(visitor, scope_name, attrs, bind_args_by_name)
+
+  def apply(self, visitor, scope_name, attrs, args):
+    def bind_args_by_pos(new_ctx):
+      for arg_name, arg in zip(self._arg_names(), args):
+        new_ctx.define_local(arg_name, arg)
+
+    return self._do_apply(visitor, scope_name, attrs, bind_args_by_pos)
 
 
 class Context:
@@ -338,9 +374,6 @@ class TopLevel:
   def _sf_fraction(self, ctx, decimal):
     return float(decimal)
 
-  def _sf_list(self, ctx, *exprs):
-    return [self.__unwrap_bag(self.visit(ctx, expr)) for expr in exprs]
-
   def _sf_define_local(self, ctx, name, value_expr):
     value = self.visit(ctx, value_expr)
     ctx.define_local(name, value)
@@ -365,7 +398,7 @@ class TopLevel:
     ctx.define_local(name, op)
     return op
 
-  def _named_apply(self, ctx, name, fn, attrs, *args):
+  def __named_apply_prep(self, ctx, name, fn, attrs, do_apply):
     if attrs and '_ellipsis' in attrs:
       raise Exception("Can't use attribute ellipsis in function apply")
 
@@ -375,19 +408,36 @@ class TopLevel:
     if scope_name == None and hasattr(fn, '_name'):
       scope_name = ctx.unique_name(fn._name())
 
-    unwrapped_args = []
-    for arg in args:
-      arg = self.__unwrap_bag(arg)
-      ctx.eliminate_leaf(arg)
-      unwrapped_args.append(arg)
+    result = do_apply(fn, scope_name)
 
-    result = fn.apply(self, scope_name, attrs, unwrapped_args)
     ctx.possible_leaf(result)
 
     if name != None:
       ctx.define_local(name, result)
 
     return result
+
+  def _named_apply_keywords(self, ctx, name, fn, attrs, kwargs):
+    def keyword_apply(unwrapped_fn, scope_name):
+      unwrapped_kwargs = {}
+      for key, value in kwargs.items():
+        value = self.__unwrap_bag(value)
+        ctx.eliminate_leaf(value)
+        unwrapped_kwargs[key] = value
+
+      return fn.apply_kw(self, scope_name, attrs, unwrapped_kwargs)
+    return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
+
+  def _named_apply(self, ctx, name, fn, attrs, *args):
+    def keyword_apply(unwrapped_fn, scope_name):
+      unwrapped_args = []
+      for arg in args:
+        arg = self.__unwrap_bag(arg)
+        ctx.eliminate_leaf(arg)
+        unwrapped_args.append(arg)
+
+      return fn.apply(self, scope_name, attrs, unwrapped_args)
+    return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
 
   def _sf_cond(self, ctx, cond_expr, then_expr, else_expr):
     return tf.cond(
@@ -442,8 +492,20 @@ class TopLevel:
   def _sf_namespace_lookup(self, ctx, ns_name, fn_name):
     return ctx.namespace_lookup(ns_name, fn_name)
 
+  def list(self, ctx, *entries):
+    return [self.__unwrap_bag(e) for e in entries]
+
   def apply_attrs(self, ctx, function, attrs):
     return function.apply_attrs(self, attrs)
+
+  def _sf_map(self, ctx, *entry_exprs):
+    d = {}
+    for name, value_expr in entry_exprs:
+      if name in d:
+        raise Exception("Already have keyword %s" % name)
+      d[name] = self.visit(ctx, value_expr)
+      # d[name] = self.__unwrap_bag(self.visit(ctx, value_expr))
+    return d
 
   def _sf_attr(self, ctx, name):
     # eprint(ctx)
@@ -492,17 +554,6 @@ class TopLevel:
 
   def _sf_function(self, ctx, name, *rest):
     return DeclaredFunction(ctx.subcontext(), [name, *rest])
-
-  def _sf_attrs_with_ellipsis(self, ctx, *attr_exprs):
-    attrs = self._sf_attrs(ctx, *attr_exprs)
-    attrs['_ellipsis'] = True
-    return attrs
-
-  def _sf_attrs(self, ctx, *attr_exprs):
-    attrs = {}
-    for name, value_expr in attr_exprs:
-      attrs[name] = self.visit(ctx, value_expr)
-    return attrs
 
   def _sf_import(self, ctx, name_pairs):
     # HACK(adamb) At the moment, assume that we're only talking about python)

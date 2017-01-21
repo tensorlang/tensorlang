@@ -80,4 +80,36 @@ module.exports = [
 `,
     action: "test",
   },
+  {
+    name: "simple attribute use",
+    fails: true,
+    source: `func lotsOfAttributes[a, b, c]() {
+      <- result = c / b - a
+    }
+
+    graph testAttributes {
+      lotsOfAttributes[a: 1.0, b: 2.0, c: 4.0] -- foo
+      tf.Assert(1.0 == ^](), {"Assertion failed!"})
+
+      after __leaves { ← result = 0 }
+    }
+`,
+    action: "test",
+  },
+  {
+    name: "no repeats in attributes",
+    fails: true,
+    source: `func lotsOfAttributes[a, b, c]() {
+      <- result = c / b - a
+    }
+
+    graph testAttributes {
+      lotsOfAttributes[a: 1.0, b: 2.0, c: 4.0, b: 2.0] -- foo
+      tf.Assert(1.0 == ^](), {"Assertion failed!"})
+
+      after __leaves { ← result = 0 }
+    }
+`,
+    action: "test",
+  },
 ];
