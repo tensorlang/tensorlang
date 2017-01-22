@@ -7,6 +7,6 @@ module.exports = [
     source: `
 `,
     fails: true,
-    match: /end of input/,
+    match: /Expected/,
   },
 ];

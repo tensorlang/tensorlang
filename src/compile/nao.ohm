@@ -9,9 +9,10 @@ NaoRules {
 	PackageName = identifier
 	ImportPath = stringLiteral
 
-	TopLevelDecl
-	  = FunctionDeclaration
+	TopLevelDecl = nl*
+		( FunctionDeclaration
 		| GraphDefinition
+		)
 
 	FunctionDeclaration = #(func ws+ identifier) FunctionSignature FunctionBlock
 	FunctionLiteral = func FunctionSignature FunctionBlock
@@ -22,19 +23,18 @@ NaoRules {
 	FunctionInputs = "(" FunctionParameters<TensorKind, ")"> ")"
 	FunctionParameters<type, la> = ListOfLookahead<FunctionParameter<type>, ",", la>
 	FunctionParameter<type> = identifier type?
-	FunctionBlock = "{" nl* FunctionBody "}" nl*
+	FunctionBlock = "{" FunctionBody nl* "}" nl*
 	FunctionBody = FunctionElement*
-	FunctionElement =
+	FunctionElement = nl*
 	    ( OutputDeclaration
 	    | Assignment
 	    | AfterStatement
 	    | Expression
 	    ) #sc
 
-
-	GraphDefinition = #(graph ws+ identifier) "{" nl* GraphBody "}" nl*
+	GraphDefinition = #(graph ws+ identifier) "{" GraphBody nl* "}" nl*
 	GraphBody = GraphElement*
-	GraphElement =
+	GraphElement = nl*
 	    ( InputDeclaration
 	    | OutputDeclaration
 	    | Assignment

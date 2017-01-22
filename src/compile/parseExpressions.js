@@ -143,6 +143,9 @@ function createSemantics(grammar) {
       Program: function(importDecls, topLevelDecls) {
         return [...importDecls.asJson, ...topLevelDecls.asJson];
       },
+      TopLevelDecl: function(_, child) {
+        return child.asJson;
+      },
       ImportDeclaration: function(_, body) {
         return ["_sf_import", body.asJson];
       },
@@ -257,13 +260,13 @@ function createSemantics(grammar) {
           return [name, shape, type];
         });
       },
-      FunctionBlock: function(_1, _2, body, _3, _4) {
+      FunctionBlock: function(_1, body, _2, _3, _4) {
         return body.asJson;
       },
-      FunctionElement: function(decl, _) {
+      FunctionElement: function(_1, decl, _2) {
         return decl.asJson;
       },
-      GraphDefinition: function(_1, _2, name, _3, _4, body, _5, _6) {
+      GraphDefinition: function(_1, _2, name, _3, body, _4, _5, _6) {
         var emitted = 0;
         body.asJson.forEach(function(expr, ix, exprs) {
           if (expr[0] === "__retval" && !expr[1]) {
@@ -273,7 +276,7 @@ function createSemantics(grammar) {
 
         return ["_sf_graph", name.asJson].concat(body.asJson);
       },
-      GraphElement: function(decl, _) {
+      GraphElement: function(_1, decl, _2) {
         return decl.asJson;
       },
       AfterStatement: function(_1, _2, _3, _4, _5, body, _6, _7) {

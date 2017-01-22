@@ -6,7 +6,14 @@ const fs = require('fs');
 const toExport: any = [
   {
     name: "basic graph",
-    source: `graph main { <- one = 1.0 }`,
+    source: `// comment before
+graph main /* comment within */ {
+  // comment within
+  <- one = 1.0
+  /* another one */
+}
+
+// comment after`,
     expect: `node {
   name: "one"
   op: "Const"
