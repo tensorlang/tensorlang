@@ -115,13 +115,48 @@ if (input || flags.source) {
     source = fs.readFileSync(filename).toString();
   }
 
+  function resolvePackage(name: string): Promise<any> {
+    type PackageAttempt = {suffix: string, language: string}
+    var trySuffixes: PackageAttempt[] = [
+      {
+        suffix: ".nao",
+        language: "nao"
+      },
+      {
+        suffix: ".py",
+        language: "python"
+      }
+    ];
+
+    return trySuffixes.reduce(
+      (p: Promise<any>, attempt: PackageAttempt): Promise<any> => {
+        return p.catch(e => {
+          return new Promise((rs, rj) => {
+            fs.readFile(
+                `${name}${attempt.suffix}`,
+                "utf-8",
+                (err, data) => {
+                  if (err) {
+                    rj(err);
+                    return;
+                  }
+                  rs({language: attempt.language, content: data});
+                });
+          });
+        })
+      },
+      Promise.reject()
+    )
+    .catch(() => { throw new Error("no such package: " + name); });
+  }
+
   var compilation: Promise<any>;
   if (compileTo) {
     fromFile = compileTo;
     fromFileBinary = compileToBinary;
-    compilation = compile.compile(source, compileTo, compileToBinary);
+    compilation = compile.compile("main", source, resolvePackage, compileTo, compileToBinary);
   } else {
-    compilation = compile.compileString(source);
+    compilation = compile.compileString("main", source, resolvePackage);
     compilation.then((str) => { fromString = str; });
   }
 

@@ -2,6 +2,7 @@ import graph_gen
 import graph_io
 import graph_query
 import graph_xform
+import json
 
 from tensorflow.python.framework import meta_graph
 
@@ -55,12 +56,23 @@ def run_session(sess, result_pattern, feed_dict):
     coord.request_stop()
     coord.join(threads)
 
+import graph_ffi
+from tensorflow.python.ops import script_ops
+
 def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict):
   with create_session() as sess:
     meta_graph.import_scoped_meta_graph(
       meta_graph_def,
       input_map=None,
     )
+
+    # NOTE(adamb) Could also store files to copy out in assets_collection
+    js_py_func_data_tensor = sess.graph.get_tensor_by_name("py_funcs_json:0")
+    js_py_func_data = js_py_func_data_tensor.eval().decode('utf-8')
+    py_func_data = json.loads(js_py_func_data)
+    eprint('loaded py_func_data', py_func_data)
+    py_importer = graph_ffi.PythonImporter()
+    py_importer.restore_py_funcs(script_ops._py_funcs, py_func_data)
 
     return run_session(sess, result_pattern, feed_dict)
 

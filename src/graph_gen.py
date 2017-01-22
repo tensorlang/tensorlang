@@ -1,10 +1,16 @@
 import copy
 import sys
+import imp
+import inspect
+import json
 
 from functools import reduce
 
 import tensorflow as tf
+
 from tensorflow.python.framework import meta_graph
+
+import graph_ffi
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -20,18 +26,41 @@ class RetvalBag:
 
   def get(self, key):
     if key == None:
-      l = len(self._d)
-      if l == 0:
-        raise Exception("Can't get default retval for an empty RetvalBag")
-      if l > 1:
-        raise Exception("Can't get default retval a RetvalBag with more than one entry: %s" % self._d)
-      key = list(self._d.keys())[0]
-
+      key = self._default_key()
     return self._d[key]
 
-  def length(self):
-    return len(self._d)
+  def _default_key(self):
+    l = len(self._d)
+    if l == 0:
+      raise Exception("Can't get default retval for an empty RetvalBag")
+    if l > 1:
+      raise Exception("Can't get default retval a RetvalBag with more than one entry: %s" % self._d)
+    return list(self._d.keys())[0]
 
+class Package:
+  def __init__(self, ctx):
+    self._ctx = ctx
+
+  def apply(self, visitor, name, attrs, args):
+    n, *_ = args
+    value = self._ctx.get_local_strict(n)
+
+    if not n[0].isupper():
+      raise Exception("Tried to use non-exported value named: %s" % n)
+
+    return value
+
+class PythonPackage:
+  def __init__(self, mod):
+    self._mod = mod
+
+  def apply(self, visitor, name, attrs, args):
+    eprint("applying %s to args %s" % (self, args))
+    n, *_ = args
+    if n.startswith('__'):
+      raise Exception("Tried to use non-exported namespace entry named: %s" % n)
+
+    return PrimitiveFunction(getattr(self._mod, n))
 
 class PrimitiveFunction:
   def __init__(self, fn):
@@ -88,6 +117,20 @@ class SyntheticFunction:
 
     return RetvalBag(dict(zip(self._retnames, retvals)))
 
+class ImportedPythonFunction:
+  def __init__(self, fn):
+    self._fn = fn
+    sig = inspect.signature(fn)
+    self._Tout = sig.return_annotation
+    self._argnames = sig.parameters.keys()
+
+  def __call__(self, *args):
+      return tf.py_func(
+        func=self._fn,
+        inp=args,
+        Tout=self._Tout,
+        stateful=True, # TODO
+        name=None)
 class Nao:
   def reasm(self, argvars, retvals, name=None):
     a = [argvar.name for argvar in argvars]
@@ -189,8 +232,6 @@ class DeclaredFunction:
   def apply_partial():
     pass
 
-  # How to represent RemyCC in this system? Can we do this tables approach?
-
   def _do_apply(self, visitor, scope_name, attrs, bind_args):
     returned = {}
     new_ctx = self._ctx.duplicate()
@@ -210,7 +251,6 @@ class DeclaredFunction:
     for retval_name, retval_argname in self._retval_specs():
       returned[retval_name] = new_ctx.get_local(retval_argname)
 
-    # For now we only use the first retval
     return RetvalBag(returned)
 
   def apply_kw(self, visitor, scope_name, attrs, kwargs):
@@ -231,7 +271,8 @@ class DeclaredFunction:
 class Context:
   def __init__(self, parent=None):
     self._parent = parent
-    self._namespaces = {}
+    self._fully_qualified_packages = {}
+    self._imported_packages = {}
     self._attrs = {}
     self._locals = {}
     self._root_suffixes = {}
@@ -240,6 +281,36 @@ class Context:
 
   def subcontext(self):
     return Context(parent=self)
+
+  def define_fully_qualified_package(self, name, pkg):
+    if name in self._fully_qualified_packages:
+      raise Exception("Already defined package: %s" % name)
+
+    self._fully_qualified_packages[name] = pkg
+
+  def fully_qualified_package(self, name):
+    if name in self._fully_qualified_packages:
+      return self._fully_qualified_packages[name]
+
+    if self._parent:
+      return self._parent.fully_qualified_package(name)
+
+    raise Exception("Package not available: %s" % name)
+
+  def import_package(self, name, pkg):
+    if name in self._imported_packages:
+      raise Exception("Already imported package: %s" % name)
+
+    self._imported_packages[name] = pkg
+
+  def imported_package(self, name):
+    if name in self._imported_packages:
+      return self._imported_packages[name]
+
+    if self._parent:
+      return self._parent.imported_package(name)
+
+    raise Exception("Package not imported: %s" % name)
 
   def duplicate(self):
     ctx = copy.copy(self)
@@ -250,19 +321,6 @@ class Context:
   def set_above(self, value):
     self._above = value
 
-  def set_namespace(self, name, value):
-    if name in self._namespaces:
-      raise Exception("Namespace already defined: %s" % name)
-    self._namespaces[name] = value
-
-  def namespace_lookup(self, ns_name, key):
-    if ns_name in self._namespaces:
-      ns = self._namespaces[ns_name]
-      return PrimitiveFunction(getattr(ns, key));
-
-    if self._parent:
-      return self._parent.namespace_lookup(ns_name, key)
-
   def define_local(self, name, value):
     if name in self._locals:
       raise Exception("Local already defined: %s" % name)
@@ -272,13 +330,19 @@ class Context:
     return name in self._attrs
 
   def define_attr(self, name, value):
-    if name in self._attrs:
+    if self.has_attr(name):
       raise Exception("Attribute already defined: %s" % name)
 
     if name in self._locals:
       raise Exception("Can't define attribute. Local exists with name: %s" % name)
 
     self._attrs[name] = value
+
+  def get_attr(self, name):
+    if name in self._attrs:
+      return self._attrs[name]
+
+    raise Exception("No such attribute: %s. Have: %s" % (name, self._attrs))
 
   def get_local(self, name):
     if name == '^':
@@ -295,11 +359,11 @@ class Context:
 
     raise Exception("No such local or function: %s. Have: %s" % (name, self._locals))
 
-  def get_attr(self, name):
-    if name in self._attrs:
-      return self._attrs[name]
+  def get_local_strict(self, name):
+    if name in self._locals:
+      return self._locals[name]
 
-    raise Exception("No such attribute: %s. Have: %s" % (name, self._attrs))
+    raise Exception("No such entry: %s. Have: %s" % (name, self._locals))
 
   def possible_leaf(self, op):
     t = type(op)
@@ -356,8 +420,10 @@ class TopLevel:
 
   def __init__(self):
     self.nesting_level = 0
+    self._python_importer = graph_ffi.PythonImporter()
     self._builtin_namespaces = {
       "tf": tf,
+      "py": Py(),
       "nao": Nao(),
     }
 
@@ -429,15 +495,14 @@ class TopLevel:
     return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
 
   def _named_apply(self, ctx, name, fn, attrs, *args):
-    def keyword_apply(unwrapped_fn, scope_name):
+    def positonal_apply(unwrapped_fn, scope_name):
       unwrapped_args = []
       for arg in args:
         arg = self.__unwrap_bag(arg)
         ctx.eliminate_leaf(arg)
         unwrapped_args.append(arg)
-
       return fn.apply(self, scope_name, attrs, unwrapped_args)
-    return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
+    return self.__named_apply_prep(ctx, name, fn, attrs, positonal_apply)
 
   def _sf_cond(self, ctx, cond_expr, then_expr, else_expr):
     return tf.cond(
@@ -489,8 +554,8 @@ class TopLevel:
     # eprint(ctx)
     return ctx.get_local(name)
 
-  def _sf_namespace_lookup(self, ctx, ns_name, fn_name):
-    return ctx.namespace_lookup(ns_name, fn_name)
+  def _sf_package_lookup(self, ctx, pkg_name):
+    return ctx.imported_package(pkg_name)
 
   def list(self, ctx, *entries):
     return [self.__unwrap_bag(e) for e in entries]
@@ -555,20 +620,46 @@ class TopLevel:
   def _sf_function(self, ctx, name, *rest):
     return DeclaredFunction(ctx.subcontext(), [name, *rest])
 
+  def _sf_python_package(self, ctx, name, source):
+    outer_module = imp.new_module("%s$wrapper" % name)
+    all_fns = self._python_importer.import_module(name, source)
+    for fn_name, fn in all_fns.items():
+      imported_py_func = ImportedPythonFunction(fn)
+      setattr(outer_module, fn_name, imported_py_func)
+
+    pkg = PythonPackage(outer_module)
+    ctx.define_fully_qualified_package(name, pkg)
+    return pkg
+
   def _sf_import(self, ctx, name_pairs):
     # HACK(adamb) At the moment, assume that we're only talking about python)
     for name, package_fragments in name_pairs:
-      ns = reduce(
-        lambda p, n: getattr(p, n),
-        package_fragments[1:],
-        {"tf": tf}[package_fragments[0]]
-      )
+      pkg = None
+      if package_fragments[0] == "tf":
+        pkg = PythonPackage(
+            reduce(
+                lambda p, n: getattr(p, n),
+                package_fragments[1:],
+                tf))
+      else:
+        # TODO(adamb) Stop doing splitting in parser. Split above in python-specific code.
+        pkg = ctx.fully_qualified_package(str.join("/", package_fragments))
 
-      ctx.set_namespace(name, ns)
+      ctx.import_package(name, pkg)
+
+  def _sf_package(self, ctx, name, *exprs):
+    subctx = ctx.subcontext()
+    with tf.variable_scope(name):
+      for expr in exprs:
+        self.visit(subctx, expr)
+
+      pkg = Package(subctx)
+      ctx.define_fully_qualified_package(name, pkg)
+      return pkg
 
   def visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
-    # eprint("%s%s" % ('  ' * self.nesting_level, expr))
+    eprint("%s%s" % ('  ' * self.nesting_level, expr))
 
     if type(expr) == list:
       expr_type = expr[0]
@@ -589,14 +680,22 @@ class TopLevel:
       self.nesting_level = self.nesting_level - 1
       return expr
 
+from tensorflow.python.ops import script_ops
+
 def meta_graph_def_from_exprs(exprs):
   with tf.Graph().as_default() as g:
     visitor = TopLevel()
     ctx = Context()
-    for name, ns in visitor._builtin_namespaces.items():
-      ctx.set_namespace(name, ns)
+    ctx.import_package("tf", PythonPackage(tf))
 
     for expr in exprs:
       visitor.visit(ctx, expr)
 
-    return meta_graph.export_scoped_meta_graph()[0]
+    # NOTE(adamb) Could also store files to copy out in assets_collection
+    py_func_data = visitor._python_importer.dump_py_funcs(script_ops._py_funcs)
+    # eprint('saved py_func_data', py_func_data)
+
+    js_py_func_data = tf.constant(json.dumps(py_func_data), name="py_funcs_json")
+
+    meta_graph_def, _ = meta_graph.export_scoped_meta_graph()
+    return meta_graph_def

@@ -9,15 +9,11 @@ var testString = require('../src/test').fromString;
 function compileAndRun(source: string): Promise<string> {
   return new Promise(
     (resolve, reject) => {
-      compileString(source)
-      .then(
-        (compiled) => {
-          runString(compiled, false)
-          .then(resolve)
-          .catch(reject);
-        }
-      )
-      .catch(reject);
+      compileString("main", source, null)
+      .then((compiled) => {
+        runString(compiled, false)
+        .then(resolve, reject)
+      }, reject);
     }
   );
 }
@@ -25,15 +21,12 @@ function compileAndRun(source: string): Promise<string> {
 function compileAndTest(source: string): Promise<string> {
   return new Promise(
     (resolve, reject) => {
-      compileString(source)
+      compileString("main", source, null)
       .then(
-        (compiled) => {
-          testString(compiled, false)
-          .then(resolve)
-          .catch(reject);
-        }
-      )
-      .catch(reject);
+          (compiled) => {
+            testString(compiled, false)
+            .then(resolve, reject)
+          }, reject)
     }
   );
 }
@@ -92,9 +85,7 @@ testCases.forEach(
           checkText(str);
           t.assert(!shouldFail, `Test should fail`);
           t.end();
-        }
-      )
-      .catch(
+        },
         (err) => {
           checkText(err.message);
 

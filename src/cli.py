@@ -57,7 +57,7 @@ def main():
 
   parser.add_argument("--test", nargs='?', type=bool, default=False,
                       help="""Run the tests graphs with given (or default) --test-* options""")
-  parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^test[^/]*/([^_].*)$",
+  parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^main/test[^/]*/([^_].*)$",
                       help="""Pattern to discover test graph results.""")
 
   parser.add_argument("--input-json", nargs='?', type=str,

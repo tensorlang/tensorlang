@@ -9,14 +9,25 @@ function loadGrammar() {
   return ohm.grammar(grammarText);
 }
 
-function nsApply(nsName, fnName, ...args) {
+function applyExpr(fn, ...args: any[]): any[] {
   return [
     "_named_apply",
     null,
-    ["_sf_namespace_lookup", nsName, fnName],
+    fn,
     null,
-    ...args
+    ...args,
   ];
+}
+
+function fullyQualifiedApply(pkgName, fnName, ...args) {
+  return applyExpr(
+    applyExpr(["_sf_package_lookup", pkgName], fnName),
+    ...args
+  );
+}
+
+function identityExpr(value) {
+  return fullyQualifiedApply("tf", "identity", value);
 }
 
 function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string }): any[] {
@@ -37,7 +48,7 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
       throw new Error("Unknown operator: " + op);
     }
 
-    return nsApply("tf", method, e, acc);
+    return fullyQualifiedApply("tf", method, e, acc);
   });
 }
 
@@ -72,7 +83,7 @@ function replaceHereExpression(expr: any[], callback: (any[]) => void) {
       callback(expr);
       break;
     case "_sf_local":
-    case "_sf_namespace_lookup":
+    case "_sf_package_lookup":
     case "_sf_attr":
     case "_sf_index":
     case "_sf_cond":
@@ -114,7 +125,7 @@ function doLookup(ns, identifier) {
   var result;
 
   if (ns) {
-    result = ["_sf_namespace_lookup", ns, identifier];
+    result = applyExpr(["_sf_package_lookup", ns], identifier);
   } else {
     result = ["_sf_local", identifier];
   }
@@ -339,13 +350,7 @@ function createSemantics(grammar) {
             return ["_named_apply", null, e, null, acc];
           } else {
             var previousName = "anon" + anonIncrement++;
-            var firstReference = [
-              "_named_apply",
-              previousName,
-              ["_sf_namespace_lookup", "tf", "identity"],
-              null,
-              acc
-            ];
+            var firstReference = identityExpr(acc)
             var otherReferences = ["_sf_local", previousName];
 
             replaceHereExpression(
@@ -482,7 +487,7 @@ function createSemantics(grammar) {
         }
 
         if (rhsValue[0] !== ["_sf_local"]) {
-          rhsValue = nsApply("tf", "identity", rhsValue);
+          rhsValue = identityExpr(rhsValue);
         }
 
         return ["__retval", name.asJson, rhsValue];
