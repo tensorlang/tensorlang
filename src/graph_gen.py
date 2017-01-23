@@ -60,7 +60,11 @@ class PythonPackage:
     if n.startswith('__'):
       raise Exception("Tried to use non-exported namespace entry named: %s" % n)
 
-    return PrimitiveFunction(getattr(self._mod, n))
+    val = getattr(self._mod, n)
+    if hasattr(val, '__call__'):
+      return PrimitiveFunction(val)
+
+    return val
 
 class PrimitiveFunction:
   def __init__(self, fn):
@@ -668,11 +672,12 @@ class TopLevel:
     for name, package_path in name_pairs:
       pkg = None
       if package_path.startswith("tensorflow:"):
-        pkg = PythonPackage(
-            reduce(
-                lambda p, n: getattr(p, n),
-                package_path.split(":",2)[1].split("/"),
-                tf))
+        py_module = tf
+        suffix = package_path.split(":", 2)[1]
+        if suffix:
+          parts = suffix.split("/")
+          py_module = reduce(lambda p, n: getattr(p, n), parts, py_module)
+        pkg = PythonPackage(py_module)
       else:
         # TODO(adamb) Stop doing splitting in parser. Split above in python-specific code.
         pkg = ctx.fully_qualified_package(package_path)

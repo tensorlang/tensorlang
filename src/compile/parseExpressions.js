@@ -115,10 +115,47 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
     expr[1] = name;
     break;
   default:
-    throw new Error("Unhandled child expression type: " + exprType);
+    throw new Error("Unhandled child expression type for name rewrite: " + exprType);
   }
 
   return expr;
+}
+
+function rewriteExpressionWithKind(kind: any[], expr: any[]): any[] {
+  var exprType = expr[0];
+  switch (exprType) {
+  case "_sf_local":
+  case "_sf_attr":
+  case "_sf_index":
+  case "_sf_cond":
+  case "__sf_here":
+  case "list":
+  case "_sf_while_loop":
+  case "_sf_map":
+  case "apply_attrs":
+  case "_named_apply":
+  case "_sf_define_local":
+    throw new Error(`Can't apply kind to expression type ${exprType}: ${JSON.stringify(expr)}`);
+
+  case "_named_tensor":
+    console.log("rewriting ", JSON.stringify(expr));
+    expr[2] = kind[1];
+    expr[3] = kind[2];
+    console.log("to ", JSON.stringify(expr));
+    break;
+  default:
+    throw new Error("Unhandled child expression type for kind rewrite: " + exprType);
+  }
+
+  return expr;
+}
+
+function doIndex(target, index) {
+  if (!index) {
+    return target;
+  }
+
+  return ["_sf_index", target, index];
 }
 
 function doLookup(ns, identifier) {
@@ -133,6 +170,17 @@ function doLookup(ns, identifier) {
   return result;
 }
 
+function doAttrLookup(ns, identifier) {
+  var result;
+
+  if (ns) {
+    result = applyExpr(["_sf_package_lookup", ns], identifier);
+  } else {
+    result = ["_sf_attr", identifier];
+  }
+
+  return result;
+}
 
 function createSemantics(grammar) {
   var s = grammar.createSemantics();
@@ -178,9 +226,12 @@ function createSemantics(grammar) {
           return acc ? acc.concat(cur) : cur;
         });
       },
-      TensorKind: function(type, shape) { return ["kind", shape.asJson, type.asJson]; },
+      TensorKind: function(type, shape) { return ["kind", shape.asJson[0], type.asJson]; },
       TensorShape_literal: function(_1, dims, _2) {
         return ["shape", ...dims.asJson];
+      },
+      unknownDimension: function(_) {
+        return null;
       },
       TensorType: function(name) { return ["_sf_type", name.sourceString]; },
 
@@ -208,16 +259,16 @@ function createSemantics(grammar) {
         return ["list"].concat(elems.asJson);
       },
 
-      TensorLiteralElement_false: function(_) {
+      PrimitiveLiteral_false: function(_) {
         return false;
       },
-      TensorLiteralElement_true: function(_) {
+      PrimitiveLiteral_true: function(_) {
         return true;
       },
-      TensorLiteralElement_number: function(value) {
+      PrimitiveLiteral_number: function(value) {
         return value.asJson;
       },
-      TensorLiteralElement_string: function(str) {
+      PrimitiveLiteral_string: function(str) {
         return str.asJson;
       },
       TensorLiteralElement_arr: function(_1, elems, _2) {
@@ -286,8 +337,13 @@ function createSemantics(grammar) {
       AfterStatement: function(_1, _2, _3, _4, _5, body, _6, _7) {
         return ["__sf_after_leaves"].concat(body.asJson);
       },
-      Assignment: function(name, _1, _2, _3, _4, rhs) {
-        return rewriteExpressionWithName(name.asJson, rhs.asJson);
+      Assignment: function(name, _1, kind, _2, rhs) {
+        var named = rewriteExpressionWithName(name.asJson, rhs.asJson);
+        if (kind.asJson[0]) {
+          return rewriteExpressionWithKind(kind.asJson[0], named);
+        }
+
+        return named;
       },
       Expression: function(child, _1, _2, _3, nameExpr) {
         var childExpr = child.asJson;
@@ -411,29 +467,26 @@ function createSemantics(grammar) {
         return ["_sf_whole", digits.sourceString];
       },
       Expression5: function(subexpr, indexSuffix) {
-        var suffix = indexSuffix.asJson[0];
-        if (!suffix) {
-          return subexpr.asJson;
-        }
-
-        return ["_sf_index", subexpr.asJson, suffix];
+        return doIndex(subexpr.asJson, indexSuffix.asJson[0]);
       },
-      Expression6_reference: function(ns, identifier, attrs) {
-        var result = doLookup(ns.asJson[0], identifier.asJson);
+      Expression6_reference: function(ns, identifier, indexSuffix, attrs) {
+        var result = doIndex(
+            doLookup(ns.asJson[0], identifier.asJson),
+            indexSuffix.asJson[0]);
 
         if (attrs.asJson[0]) {
           return ["apply_attrs", result, attrs.asJson[0]];
         }
         return result;
       },
-      Expression6_applyPos: function(ns, fn_name, attrs, _1, argList, _2) {
+      Expression6_applyPos: function(ns, fn_name, indexSuffix, attrs, _1, argList, _2) {
         return [
           "_named_apply", null,
-          doLookup(ns.asJson[0], fn_name.asJson),
+          doIndex(doLookup(ns.asJson[0], fn_name.asJson), indexSuffix.asJson[0]),
           attrs.asJson[0],
           ...(argList.asJson || [])];
       },
-      Expression6_applyKwd: function(ns, fn_name, attrs, _1, keywordArgs, _2) {
+      Expression6_applyKwd: function(ns, fn_name, indexSuffix, attrs, _1, keywordArgs, _2) {
         return [
           "_named_apply_keywords", null,
           doLookup(ns.asJson[0], fn_name.asJson),
@@ -479,6 +532,15 @@ function createSemantics(grammar) {
       },
       AttributeList: function(list) {
         return list.asJson;
+      },
+      AttributeReference: function(ns, identifier, attrs) {
+        var result = doAttrLookup(ns.asJson[0], identifier.asJson);
+
+        if (attrs.asJson[0]) {
+          return ["apply_attrs", result, attrs.asJson[0]];
+        }
+
+        return result;
       },
       AttributeEntry: function(name, _, value) {
         return [name.asJson, value.asJson];

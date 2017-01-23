@@ -32,7 +32,7 @@ def run_session(sess, result_pattern, feed_dict):
   _summary_writer = tf.train.SummaryWriter('./logdir/%s' % run_name, sess.graph)
   # eprint(tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS))
 
-  tf.global_variables_initializer()
+  tf.global_variables_initializer().run()
   coord = tf.train.Coordinator()
 
   # run_options = tf.RunOptions(

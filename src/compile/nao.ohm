@@ -51,7 +51,8 @@ NaoRules {
 	  | identifier
 	TensorKind = TensorType TensorShape?
 	TensorShape
-	  = "<" ListOfLookahead<(number | "?"), ",", ">"> ">" -- literal
+	  = "<" ListOfLookahead<(AttributeReference | number | unknownDimension), ",", ">"> ">" -- literal
+	unknownDimension = "?"
 	TensorType =
 	  | float
 	  | double
@@ -135,7 +136,7 @@ NaoRules {
 	stringLiteral (a string)
 	   =  "\"" (char | "\'")* "\""
 
-  Assignment = #(identifier ws+) TensorKind? #("=" ws+) Expression
+	Assignment = #(identifier ws+) TensorKind? "=" Expression
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
 	Expression1 = NonemptyListOf<Expression2, reverseComposition>
 	Expression2 = NonemptyListOf<Expression3, relop>
@@ -150,9 +151,9 @@ NaoRules {
 		| RecExpression
 		| above -- aboveRef
 		| here -- hereRef
-		| #(invocationNamespace? identifier) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- applyPos
-		| #(invocationNamespace? identifier) AttributeBlock? "(" KeywordArguments ")" -- applyKwd
-		| #(invocationNamespace? identifier) AttributeBlockWithEllipsis? -- reference
+		| #(invocationNamespace? identifier indexSuffix?) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- applyPos
+		| #(invocationNamespace? identifier indexSuffix?) AttributeBlock? "(" KeywordArguments ")" -- applyKwd
+		| #(invocationNamespace? identifier indexSuffix?) AttributeBlockWithEllipsis? -- reference
 
 	// TODO(adamb) Should actually allow multiple conditional expressions, taking the last one.
 	// TODO(adamb) Should also allow multiple then and else expressions.
@@ -191,7 +192,15 @@ NaoRules {
 	  = AttributeValueList
 	  | FunctionLiteral
 	  | TensorShape
-		| Expression
+	  | PrimitiveLiteral
+		| AttributeReference
+	AttributeReference =
+		#(invocationNamespace? identifier) AttributeBlockWithEllipsis?
+	PrimitiveLiteral
+	  = number  -- number
+	  | "true"  -- true
+	  | "false" -- false
+	  | stringLiteral -- string
 
 	ListLiteral = "{" ListOfLookahead<ListLiteralEntry, ",", "}"> "}"
 	ListLiteralEntry =
@@ -200,10 +209,7 @@ NaoRules {
 
 	TensorLiteral = TensorLiteralElement
 	TensorLiteralElement
-	  = number  -- number
-	  | "true"  -- true
-	  | "false" -- false
-	  | stringLiteral -- string
+	  = PrimitiveLiteral
 	  | "[" ListOfLookahead<TensorLiteralElement, ",", "]"> "]" -- arr
 
 	AttributeValueList = "[" ListOfLookahead<AttributeValueListEntry, ",", "]"> "]"
