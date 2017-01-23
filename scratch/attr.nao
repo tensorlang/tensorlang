@@ -1,0 +1,69 @@
+import (
+  summaryWriter "summary_writer"
+  mnistFormat   "mnist_data"
+
+  tf            "tensorflow:"
+  nn            "tensorflow:nn"
+  summary       "tensorflow:summary"
+  train         "tensorflow:train"
+
+)
+
+func weightVar[shape]() {
+  <- w = tf.Variable(tf.truncated_normal[shape: shape, stddev: 0.1]())
+}
+
+func biasVar[dim]() {
+  initialValue float<dim> = 0.1
+  <- b = tf.Variable(initialValue)
+}
+
+func nnLayer[inputDim, outputDim, act](input) {
+  w = weightVar[shape: <inputDim, outputDim>]()
+  b = biasVar[dim: outputDim]()
+  tf.matmul(input, w) + b
+  <- r = act(^)
+}
+
+graph testMnistFormat {
+  imagesFile = "../MNIST_data/train-images-idx3-ubyte.gz"
+  labelsFile = "../MNIST_data/train-labels-idx1-ubyte.gz"
+
+  // Load images file
+  mnistFormat.ReadImages(imagesFile) -- images
+  mnistFormat.ReadLabels(labelsFile) -- labels
+
+  // Make new queue, add mnist data to it.
+  train.input_producer[element_shape: <784>](images) -- imageQueue
+  train.input_producer[element_shape: <10>](labels) -- labelQueue
+
+  100 -- batchSize
+
+  rec step = 0; step < 100 {
+    imageQueue:dequeue_many(100) -- imageBatch
+    summary.image(tf.reshape(^, [-1, 28, 28, 1])) -- imageSummary
+
+    labelQueue:dequeue_many(100) -- labelBatch
+
+    hidden1 = nnLayer[inputDim: 784, outputDim: 500, act: nn.relu](imageBatch)
+    y = nnLayer[inputDim: 500, outputDim: 10, act: tf.identity](hidden1)
+
+    nn.softmax_cross_entropy_with_logits(labels: labelBatch, logits: y)
+    tf.reduce_mean(^) -- xEntropy
+    summary.scalar(^) -- labelSummary
+
+    tf.argmax(y, 1) == tf.argmax(labelBatch, 1) -- correct_prediction
+    accuracy = tf.reduce_mean(tf.cast(^, tf.float32))
+    summary.scalar(^) -- accuracySummary
+
+    summaryWriter.Add(summary.merge_all())
+    <- step = step + 1
+  }
+
+  learning_rate = 0.1
+  opt = train.AdamOptimizer(learning_rate)
+  opt:minimize(xEntropy) -- train_step
+
+
+  after __leaves { ← result = 0 }
+}
