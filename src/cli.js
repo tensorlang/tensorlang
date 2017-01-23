@@ -2,6 +2,8 @@
 "use strict";
 
 const fs = require('fs');
+const process = require('process');
+const path = require('path');
 const meow = require('meow');
 const compile = require('./compile.js');
 const run = require('./run.js');
@@ -14,6 +16,7 @@ const opts = meow(`
 `,
   {
     string: [
+      'root',                  // --root ./scratch
       'source',                // --source "graph agraph { one = 1 }"
       'compile',               // --compile foo.pbtxt
       'use-graph',             // --use-graph file.pbtxt
@@ -97,6 +100,7 @@ function maybeRun() {
 
 if (input || flags.source) {
   var source;
+  var pkgRootDir = flags.root || process.cwd();
   var compileTo = flags.compile;
   var compileToBinary = flags.compileBinary;
 
@@ -110,7 +114,8 @@ if (input || flags.source) {
     var splitInput = input.split(".", 2);
     var basename = splitInput[0];
     var graphName = splitInput[1] || 'main';
-    var filename = `${basename}${suffix}`
+    var filename = path.join(pkgRootDir, `${basename}${suffix}`);
+
     // TODO(adamb) Don't do this synchronously
     source = fs.readFileSync(filename).toString();
   }
@@ -133,7 +138,7 @@ if (input || flags.source) {
         return p.catch(e => {
           return new Promise((rs, rj) => {
             fs.readFile(
-                `${name}${attempt.suffix}`,
+                path.join(pkgRootDir, `${name}${attempt.suffix}`),
                 "utf-8",
                 (err, data) => {
                   if (err) {

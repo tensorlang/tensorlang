@@ -29,7 +29,7 @@ class PythonImporter:
     unique_id = data['unique_id']
     modules = data['modules']
 
-    eprint('py_funcs._funcs', py_funcs._funcs)
+    # eprint('py_funcs._funcs', py_funcs._funcs)
     with py_funcs._lock:
       if py_funcs._unique_id != 0:
         raise Exception("py_funcs is not pristine. Aborting restore.")
@@ -41,7 +41,7 @@ class PythonImporter:
     modules = {}
     for token, fn in fn_by_token_dict.items():
       module_name, fn_name = self._imported_functions[fn]
-      eprint("dumping %s -> (%s, %s)" % (fn, module_name, fn_name))
+      # eprint("dumping %s -> (%s, %s)" % (fn, module_name, fn_name))
       if module_name not in modules:
         modules[module_name] = {
           "source": self._module_sources[module_name],
@@ -80,5 +80,5 @@ class PythonImporter:
 
     self._module_sources[name] = source
 
-    eprint('_load_module_functions', d)
+    # eprint('_load_module_functions', d)
     return d

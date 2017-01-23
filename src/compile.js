@@ -117,8 +117,12 @@ class PackageParser {
         console.log('exprRest', JSON.stringify(imported));
 
         imported.forEach(
-          ([importName, packageName]) => {
-            importedPackageNames.push(packageName.join("/"));
+          ([importName, packagePath]) => {
+            // Skip imports that provide direct access to TensorFlow internals.
+            if (packagePath.startsWith("tensorflow:")) {
+              return;
+            }
+            importedPackageNames.push(packagePath);
           }
         );
       }

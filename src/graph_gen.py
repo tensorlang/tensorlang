@@ -65,6 +65,17 @@ class PythonPackage:
 class PrimitiveFunction:
   def __init__(self, fn):
     self._fn = fn
+    sig = inspect.signature(fn)
+    self._params = sig.parameters
+
+    self._name_is_kwdarg = False
+    self._name_is_posarg = False
+    if 'name' in self._params:
+      name_param = self._params['name']
+      if name_param.kind == inspect.Parameter.KEYWORD_ONLY:
+        self._name_is_kwdarg = True
+      else:
+        self._name_is_posarg = True
 
   def apply_kw(self, visitor, name, attrs, kwargs):
     if kwargs == None:
@@ -83,9 +94,24 @@ class PrimitiveFunction:
     if attrs == None:
       attrs = {}
 
-    if name != None:
+    if self._name_is_kwdarg:
       attrs = dict(attrs)
       attrs['name'] = name
+
+    if self._name_is_posarg:
+      new_args = []
+      arg_ix = 0
+      nargs = len(args)
+      for param_name, param in self._params.items():
+        if arg_ix >= nargs:
+          break
+
+        if param_name == 'name':
+          new_args.append(name)
+        else:
+          new_args.append(args[arg_ix])
+          arg_ix += 1
+      args = new_args
 
     try:
       return self._fn(*args, **attrs)
@@ -131,6 +157,7 @@ class ImportedPythonFunction:
         Tout=self._Tout,
         stateful=True, # TODO
         name=None)
+
 class Nao:
   def reasm(self, argvars, retvals, name=None):
     a = [argvar.name for argvar in argvars]
@@ -423,7 +450,6 @@ class TopLevel:
     self._python_importer = graph_ffi.PythonImporter()
     self._builtin_namespaces = {
       "tf": tf,
-      "py": Py(),
       "nao": Nao(),
     }
 
@@ -431,7 +457,7 @@ class TopLevel:
   def _sf_type(self, ctx, name):
     return TopLevel.TYPES[name]
 
-  def _sf_shape(self, ctx, dims):
+  def shape(self, ctx, *dims):
     return tf.TensorShape(dims)
 
   def _sf_whole(self, ctx, digits):
@@ -615,7 +641,13 @@ class TopLevel:
     if type(target) == RetvalBag:
       return target.get(index)
 
-    return target[index]
+    if hasattr(target, '__getitem__'):
+      return target[index]
+
+    # HACK(adamb) This will return an wrapped python function.
+    # We're using it at the moment to get access to op-producing
+    # instance methods like those on QueueBase. 8[
+    return PrimitiveFunction(getattr(target, index))
 
   def _sf_function(self, ctx, name, *rest):
     return DeclaredFunction(ctx.subcontext(), [name, *rest])
@@ -633,17 +665,17 @@ class TopLevel:
 
   def _sf_import(self, ctx, name_pairs):
     # HACK(adamb) At the moment, assume that we're only talking about python)
-    for name, package_fragments in name_pairs:
+    for name, package_path in name_pairs:
       pkg = None
-      if package_fragments[0] == "tf":
+      if package_path.startswith("tensorflow:"):
         pkg = PythonPackage(
             reduce(
                 lambda p, n: getattr(p, n),
-                package_fragments[1:],
+                package_path.split(":",2)[1].split("/"),
                 tf))
       else:
         # TODO(adamb) Stop doing splitting in parser. Split above in python-specific code.
-        pkg = ctx.fully_qualified_package(str.join("/", package_fragments))
+        pkg = ctx.fully_qualified_package(package_path)
 
       ctx.import_package(name, pkg)
 

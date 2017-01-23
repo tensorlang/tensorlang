@@ -156,12 +156,14 @@ function createSemantics(grammar) {
         return specs.asJson;
       },
       ImportSpec: function(packageName, importPath, _) {
-        var pathFragments = importPath.asJson.split("/");
+        var path = importPath.asJson;
         var name = packageName.asJson[0];
+
+        var pathFragments = path.split("/");
         if (!name) {
           name = pathFragments[pathFragments.length - 1];
         }
-        return [name, pathFragments];
+        return [name, path];
       },
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },
@@ -177,7 +179,9 @@ function createSemantics(grammar) {
         });
       },
       TensorKind: function(type, shape) { return ["kind", shape.asJson, type.asJson]; },
-      TensorShape_literal: function(_1, dims, _2) { return ["_sf_shape", dims.asJson]; },
+      TensorShape_literal: function(_1, dims, _2) {
+        return ["shape", ...dims.asJson];
+      },
       TensorType: function(name) { return ["_sf_type", name.sourceString]; },
 
       number_whole: function(sign, _, digits, maybeImaginary) {
