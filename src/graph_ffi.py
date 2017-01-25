@@ -56,14 +56,11 @@ class PythonImporter:
     for module_name, data in modules.items():
       source, fn_name_by_token = data['source'], data['fn_name_by_token']
       fn_names = []
-      token_by_fn_name = {}
       for token, fn_name in fn_name_by_token.items():
         fn_names.append(fn_name)
-        token_by_fn_name[fn_name] = token
 
       fns = self._load_module_functions(module_name, source, fn_names)
-      for fn_name, fn in fns.items():
-        token = token_by_fn_name[fn_name]
+      for token, fn_name in fn_name_by_token.items():
         fn_by_token[token] = fns[fn_name]
 
     return fn_by_token
