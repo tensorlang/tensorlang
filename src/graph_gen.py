@@ -521,7 +521,7 @@ class TopLevel:
         ctx.eliminate_leaf(value)
         unwrapped_kwargs[key] = value
 
-      return fn.apply_kw(self, scope_name, attrs, unwrapped_kwargs)
+      return unwrapped_fn.apply_kw(self, scope_name, attrs, unwrapped_kwargs)
     return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
 
   def _named_apply(self, ctx, name, fn, attrs, *args):
@@ -531,7 +531,10 @@ class TopLevel:
         arg = self.__unwrap_bag(arg)
         ctx.eliminate_leaf(arg)
         unwrapped_args.append(arg)
-      return fn.apply(self, scope_name, attrs, unwrapped_args)
+      if hasattr(unwrapped_fn, 'apply'):
+        return unwrapped_fn.apply(self, scope_name, attrs, unwrapped_args)
+      else:
+        raise Exception("Can't apply non-function %s with unwrapped args %s" % (unwrapped_fn, unwrapped_args))
     return self.__named_apply_prep(ctx, name, fn, attrs, positonal_apply)
 
   def _sf_cond(self, ctx, cond_expr, then_expr, else_expr):
