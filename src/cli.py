@@ -66,6 +66,8 @@ def main():
                       help="""Whether or not to output in binary.""")
   parser.add_argument("--output-metagraphdef", nargs='?', type=str,
                       help="""Path to write output in.""")
+  parser.add_argument("--output-graphdef", nargs='?', type=str,
+                      help="""Path to write output in.""")
 
   FLAGS, unparsed = parser.parse_known_args()
 
@@ -81,6 +83,12 @@ def main():
     graph_io.write_meta_graph_def(
       meta_graph_def=meta_graph_def,
       file=FLAGS.output_metagraphdef,
+      binary=FLAGS.output_binary)
+
+  if FLAGS.output_graphdef:
+    graph_io.write_graph_def(
+      graph_def=meta_graph_def.graph_def,
+      file=FLAGS.output_graphdef,
       binary=FLAGS.output_binary)
 
   if FLAGS.test == None:

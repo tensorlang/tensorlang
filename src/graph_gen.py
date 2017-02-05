@@ -81,6 +81,9 @@ class PrimitiveFunction:
       else:
         self._name_is_posarg = True
 
+  def apply_attrs(self, visitor, attrs):
+    return PrimitiveFunction(partial(self._fn, **attrs))
+
   def apply_kw(self, visitor, name, attrs, kwargs):
     if kwargs == None:
       kwargs = {}

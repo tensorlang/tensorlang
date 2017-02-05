@@ -136,7 +136,9 @@ module.exports = {
   compileString: function(
       packageName: string,
       source: string,
-      resolveImport: ?PackageSourceResolver): Promise<string> {
+      resolveImport: ?PackageSourceResolver,
+      compileGraphTo: string,
+      compileGraphBinary: bool): Promise<string> {
     return new Promise((resolve, reject) => {
       const pp = new PackageParser(resolveImport);
       pp.parsePackageAndImports(packageName, source)
@@ -148,6 +150,7 @@ module.exports = {
               `${__dirname}/cli.py`,
               "--input-json", "/dev/stdin",
               "--output-metagraphdef", "/dev/stdout",
+              ...(compileGraphTo ? ["--output-graphdef", compileGraphTo] : []),
             ],
             JSON.stringify(expressions)
           )
@@ -160,7 +163,8 @@ module.exports = {
       source: string,
       resolveImport: ?PackageSourceResolver,
       output: string,
-      binary: boolean): Promise<any> {
+      binary: boolean,
+      compileGraphTo: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const pp = new PackageParser(resolveImport);
       pp.parsePackageAndImports(packageName, source)
@@ -171,6 +175,7 @@ module.exports = {
             `${__dirname}/cli.py`,
             "--input-json", "/dev/stdin",
             ...(output ? ["--output-metagraphdef", output] : []),
+            ...(compileGraphTo ? ["--output-graphdef", compileGraphTo] : []),
             ...(binary ? ["--output-binary"] : [])
           ],
           JSON.stringify(expressions),

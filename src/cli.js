@@ -19,6 +19,7 @@ const opts = meow(`
       'root',                  // --root ./scratch
       'source',                // --source "graph agraph { one = 1 }"
       'compile',               // --compile foo.pbtxt
+      'compile-graph',         // --compile-graph foo.pbtxt
       'use-graph',             // --use-graph file.pbtxt
       // Path to GraphDef protobuf with constants to feed
       'feed-constants',        // --feed-constants inputs.pbtxt
@@ -60,7 +61,7 @@ if (inputs.length > 1) {
   opts.showHelp(1);
 }
 
-const shouldRunGraph = flags.run || flags.feedConstants || flags.resultPrefix || !(flags.test || flags.compile);
+const shouldRunGraph = flags.run || flags.feedConstants || flags.resultPrefix || !(flags.test || flags.compile || flags.compileGraph);
 const shouldTestGraph = flags.test;
 
 console.log(inputs);
@@ -102,6 +103,7 @@ if (input || flags.source) {
   var source;
   var pkgRootDir = flags.root || process.cwd();
   var compileTo = flags.compile;
+  var compileGraphTo = flags.compileGraph;
   var compileToBinary = flags.compileBinary;
 
   if (flags.source) {
@@ -159,9 +161,11 @@ if (input || flags.source) {
   if (compileTo) {
     fromFile = compileTo;
     fromFileBinary = compileToBinary;
-    compilation = compile.compile("main", source, resolvePackage, compileTo, compileToBinary);
+    compilation = compile.compile("main", source, resolvePackage,
+        compileTo, compileGraphTo, compileToBinary);
   } else {
-    compilation = compile.compileString("main", source, resolvePackage);
+    compilation = compile.compileString("main", source, resolvePackage,
+        compileGraphTo, compileToBinary);
     compilation.then((str) => { fromString = str; });
   }
 
