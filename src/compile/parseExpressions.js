@@ -52,28 +52,58 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
   });
 }
 
-function processFunctionBody(signature, body) {
-  var retvals = [];
-  var [attributes, inputs] = signature;
-
-  var expressions = body.map(function(expr, ix, exprs) {
-    if (expr[0] === "__retval") {
-      var retName = expr[1];
-      var retVal = expr[2];
-      var subName = retVal[1];
-      if (!subName) {
-        subName = "retval_" + retvals.length;
-        retVal[1] = subName;
-      }
-
-      retvals.push([retName, subName]);
-      return retVal;
+function processFunctionBodyExpr(upvalNames: string[], retvals: any[], isMacro: bool, expr) {
+  if (expr[0] === "__retval") {
+    console.log('processFunctionBodyExpr', JSON.stringify(expr));
+    var [_, retName, retVal: any[]] = expr;
+    var subName = expressionName(retVal);
+    if (!subName) {
+      subName = "retval" + retvals.length;
+      retVal = rewriteExpressionWithName(subName, retVal);
     }
 
-    return expr;
-  });
+    retvals.push([retName, subName]);
+    return retVal;
+  }
 
-  return [attributes, inputs, retvals].concat(expressions);
+  if (expr[0] === "_sf_after_leaves") {
+    var [_, ...rest] = expr;
+    return [
+      expr[0],
+      ...rest.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, isMacro))
+    ];
+  }
+
+  if (isMacro) {
+    if (expr[0] === "_named_define_local") {
+      expr[0] = "_named_define_attr";
+    }
+  }
+
+  if (expr[0] === "_named_define_local") {
+    upvalNames.push(expr[1]);
+  }
+
+  return expr;
+}
+
+function processFunctionBody(name, signature, body) {
+  var retvals = [];
+  var upvals = [];
+  var [attributes, inputs] = signature;
+
+  // If inputs is null, this is a macro.
+  // Otherwise it's a boring old function.
+  var isMacro = !inputs;
+
+  var expressions = body.map(processFunctionBodyExpr.bind(null, upvals, retvals, isMacro));
+
+  if (isMacro) {
+    return ["_sf_macro", name, attributes, retvals, ...expressions];
+  }
+
+  return ["_sf_function", name, attributes, inputs, retvals,
+      ...expressions];
 }
 
 function replaceHereExpression(expr: any[], callback: (any[]) => void) {
@@ -88,12 +118,48 @@ function replaceHereExpression(expr: any[], callback: (any[]) => void) {
     case "_sf_index":
     case "_sf_cond":
     case "_sf_function":
+    case "_sf_macro":
       // Do not recurse within these.
       break;
     default:
       expr.forEach((e) => { replaceHereExpression(e, callback); });
     }
   }
+}
+
+function expressionName(expr: any[]): ?string {
+  var exprType = expr[0];
+  switch (exprType) {
+  case "_sf_index":
+  case "_sf_cond":
+  case "__sf_here":
+  case "list":
+  case "_sf_while_loop":
+  case "_sf_map":
+  case "apply_attrs":
+    return null;
+
+  case "assert_type":
+  case "assert_shape":
+    return expressionName(expr[2]);
+
+  case "_sf_after_leaves":
+    if (expr.length == 1) {
+      throw new Error("Encountered empty _sf_after_leaves: " + JSON.stringify(expr));
+    }
+    return expressionName(expr[expr.length - 1]);
+
+  case "_sf_function":
+  case "_sf_macro":
+  case "_sf_local":
+  case "_sf_attr":
+  case "_named_tensor":
+  case "_sf_macro":
+  case "_named_apply":
+    return expr[1];
+  }
+
+  throw new Error("Unhandled child expression type for expressionName: " + exprType);
 }
 
 function rewriteExpressionWithName(name: string, expr: any[]): any[] {
@@ -108,10 +174,21 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
   case "_sf_while_loop":
   case "_sf_map":
   case "apply_attrs":
-    return ["_sf_define_local", name, expr];
+  case "_sf_function":
+  case "_sf_macro":
+    return ["_named_define_local", name, expr];
+
+  case "assert_type":
+  case "assert_shape":
+    return rewriteExpressionWithName(name, expr[2]);
+
+  case "_sf_after_leaves":
+    return rewriteExpressionWithName(name, identityExpr(expr));
 
   case "_named_tensor":
+  case "_sf_macro":
   case "_named_apply":
+  case "_named_apply_keywords":
     expr[1] = name;
     break;
   default:
@@ -121,7 +198,7 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
   return expr;
 }
 
-function rewriteExpressionWithKind(kind: any[], expr: any[]): any[] {
+function rewriteExpressionWithShape(shape: any[], expr: any[]): any[] {
   var exprType = expr[0];
   switch (exprType) {
   case "_sf_local":
@@ -134,20 +211,102 @@ function rewriteExpressionWithKind(kind: any[], expr: any[]): any[] {
   case "_sf_map":
   case "apply_attrs":
   case "_named_apply":
-  case "_sf_define_local":
-    throw new Error(`Can't apply kind to expression type ${exprType}: ${JSON.stringify(expr)}`);
+  case "assert_type":
+  case "assert_shape":
+    if (shape) {
+      expr = ["assert_shape", shape, expr];
+    }
+    break;
+
+  case "_sf_function":
+    if (shape) {
+      throw new Error("Can't rewrite a function to have shape: " + JSON.stringify(shape));
+    }
+    break;
+
+  case "_sf_after_leaves":
+    if (shape) {
+      if (expr.length == 1) {
+        throw new Error("Encountered empty _sf_after_leaves: " + JSON.stringify(expr));
+      }
+      expr[expr.length - 1] = rewriteExpressionWithShape(shape, expr[expr.length - 1]);
+    }
+    break;
+
+  case "_named_define_local":
+    if (shape) {
+      expr = ["_named_define_local", expr[1], ["assert_shape", shape, expr[2]]];
+    }
+    break;
 
   case "_named_tensor":
-    console.log("rewriting ", JSON.stringify(expr));
-    expr[2] = kind[1];
-    expr[3] = kind[2];
-    console.log("to ", JSON.stringify(expr));
+    if (shape) {
+      console.log("rewriting ", JSON.stringify(expr));
+      expr[2] = shape;
+      console.log("to ", JSON.stringify(expr));
+    }
     break;
   default:
-    throw new Error("Unhandled child expression type for kind rewrite: " + exprType);
+    throw new Error("Unhandled child expression type for shape rewrite: " + exprType);
   }
 
   return expr;
+}
+
+function rewriteExpressionWithType(type: any[], expr: any[]): any[] {
+  var exprType = expr[0];
+  switch (exprType) {
+  case "_sf_local":
+  case "_sf_attr":
+  case "_sf_index":
+  case "_sf_cond":
+  case "__sf_here":
+  case "list":
+  case "_sf_while_loop":
+  case "_sf_map":
+  case "apply_attrs":
+  case "_named_apply":
+  case "assert_type":
+  case "assert_shape":
+  case "_named_define_local":
+    if (type) {
+      expr = ["assert_type", type, expr];
+    }
+    break;
+
+  case "_sf_function":
+    if (type) {
+      throw new Error("Can't rewrite a function to have type: " + JSON.stringify(type));
+    }
+    break;
+
+  case "_sf_after_leaves":
+    if (type) {
+      if (expr.length == 1) {
+        throw new Error("Encountered empty _sf_after_leaves: " + JSON.stringify(expr));
+      }
+      expr[expr.length - 1] = rewriteExpressionWithType(type, expr[expr.length - 1]);
+      break;
+    }
+
+  case "_named_tensor":
+    if (type) {
+      console.log("rewriting ", JSON.stringify(expr));
+      expr[3] = type;
+      console.log("to ", JSON.stringify(expr));
+    }
+    break;
+  default:
+    throw new Error("Unhandled child expression type for type rewrite: " + exprType);
+  }
+
+  return expr;
+}
+
+function rewriteExpressionWithKind(kind: any[], expr: any[]): any[] {
+  return rewriteExpressionWithType(
+    kind[2],
+    rewriteExpressionWithShape(kind[1], expr));
 }
 
 function doIndex(target, index) {
@@ -191,7 +350,7 @@ function createSemantics(grammar) {
       Program: function(importDecls, topLevelDecls) {
         return [...importDecls.asJson, ...topLevelDecls.asJson];
       },
-      TopLevelDecl: function(_, child) {
+      TopLevelDecl: function(_1, child, _2) {
         return child.asJson;
       },
       ImportDeclaration: function(_, body) {
@@ -228,7 +387,7 @@ function createSemantics(grammar) {
       },
       TensorKind: function(type, shape) { return ["kind", shape.asJson[0], type.asJson]; },
       TensorShape_literal: function(_1, dims, _2) {
-        return ["shape", ...dims.asJson];
+        return ["shape", ...(dims.asJson || [])];
       },
       unknownDimension: function(_) {
         return null;
@@ -278,27 +437,25 @@ function createSemantics(grammar) {
         return ["_named_tensor", null, null, null, child.asJson];
       },
       FunctionLiteral: function(_, signature, block) {
-        return ["_sf_function", null].concat(
-          processFunctionBody(signature.asJson, block.asJson));
+        return processFunctionBody(null, signature.asJson, block.asJson);
       },
       FunctionDeclaration: function(_1, _2, name, signature, block) {
         return [
-          "_sf_define_local", name.asJson,
-          ["_sf_function", name.asJson].concat(
-            processFunctionBody(signature.asJson, block.asJson))
+          "_named_define_attr", name.asJson,
+          processFunctionBody(name.asJson, signature.asJson, block.asJson),
         ];
       },
       FunctionSignature: function(attributes, inputs) {
-        return [attributes.asJson[0], inputs.asJson];
+        return [attributes.asJson[0], inputs.asJson[0]];
       },
       FunctionParameter: function(name, type) {
-        return [name.asJson, type.asJson];
+        return [name.asJson, type.asJson[0]];
       },
       FunctionAttributeType: function(type, _1, minValue, _2, initialValue) {
         return null;
       },
       FunctionAttributes: function(_1, parameters, _2) {
-        return parameters.asJson.map(function(parameter) {
+        return (parameters.asJson || []).map(function(parameter) {
           // TODO(adamb) Actually use type in the future.
           // [attrName, attrType, attrInitialValue]
 
@@ -308,14 +465,13 @@ function createSemantics(grammar) {
       },
       FunctionInputs: function(_1, parameters, _2) {
         var params = parameters.asJson || [];
-        return params.map(function(parameter) {
-          var [name, kind] = parameter;
-          var shape = kind && kind[0];
-          var type = kind && kind[1];
+        return params.map(function([name, kind]) {
+          var shape = kind && kind[1];
+          var type = kind && kind[2];
           return [name, shape, type];
         });
       },
-      FunctionBlock: function(_1, body, _2, _3, _4) {
+      FunctionBlock: function(_1, body, _2, _3) {
         return body.asJson;
       },
       FunctionElement: function(_1, decl, _2) {
@@ -334,16 +490,22 @@ function createSemantics(grammar) {
       GraphElement: function(_1, decl, _2) {
         return decl.asJson;
       },
-      AfterStatement: function(_1, _2, _3, _4, _5, body, _6, _7) {
-        return ["__sf_after_leaves"].concat(body.asJson);
+      AfterExpression: function(_1, _2, _3, _4, _5, body, _6) {
+        return ["_sf_after_leaves", ...body.asJson];
       },
-      Assignment: function(name, _1, kind, _2, rhs) {
-        var named = rewriteExpressionWithName(name.asJson, rhs.asJson);
-        if (kind.asJson[0]) {
-          return rewriteExpressionWithKind(kind.asJson[0], named);
-        }
-
-        return named;
+      VariableDeclaration: function(_1, _2, name, type, shape, _3, rhs) {
+        return [
+          "_named_var", name.asJson,
+          shape.asJson, type.asJson[0],
+          rewriteExpressionWithShape(shape.asJson,
+              rewriteExpressionWithType(type.asJson[0],
+                  rhs.asJson))
+        ];
+      },
+      Assignment: function(name, _1, type, shape, _2, rhs) {
+        return rewriteExpressionWithType(type.asJson[0],
+          rewriteExpressionWithShape(shape.asJson[0],
+              rewriteExpressionWithName(name.asJson, rhs.asJson)));
       },
       Expression: function(child, _1, _2, _3, nameExpr) {
         var childExpr = child.asJson;
@@ -364,35 +526,27 @@ function createSemantics(grammar) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       RecExpression: function(_1, _2, initializers, condition, body) {
+        console.log('RecExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
         var retvals = [];
-        var bodyExprs = body.asJson.map(function(expr) {
-          if (expr[0] === "__retval") {
-            var retName = expr[1];
-            var retVal = expr[2];
-            var subName = retVal[1];
-            if (!subName) {
-              subName = "retval_" + retvals.length;
-              retVal[1] = subName;
-            }
-
-            retvals.push([retName, subName]);
-            return retVal;
-          }
-
-          return expr;
-        });
+        var upvalNames = [];
+        var bodyExprs = body.asJson.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, false));
+        var upvals = [];
+        // var upvals = upvalNames.map((name) => { return ["_sf_local", name]; });
 
         return [
           "_sf_while_loop", condition.asJson,
-          body.asJson, retvals,
-          initializers.asJson,
+          bodyExprs, retvals,
+          [...upvals, ...initializers.asJson],
         ];
       },
       RecInitializers: function(exprs, _2) {
         return exprs.asJson;
       },
-      RecBody: function(_1, _2, exprs, _4, _5) {
+      RecBody: function(_1, exprs, _2, _3) {
         return exprs.asJson;
+      },
+      RecBodyExpression: function(_1, expr, _2) {
+        return expr.asJson
       },
       Expression1: function(subexpr) {
         var [ops, ...exprs] = subexpr.asJson;
@@ -511,7 +665,7 @@ function createSemantics(grammar) {
       AttributeBlockWithEllipsis: function(_1, _2, list, _3, _4) {
         var entries = [];
         var hasEllipsis = false;
-        list.asJson.forEach(function(elem) {
+        (list.asJson || []).forEach(function(elem) {
           if (elem === "...") {
             if (hasEllipsis) {
               throw new Error("An attribute block may contain up to one ellipsis");
@@ -533,6 +687,9 @@ function createSemantics(grammar) {
       AttributeList: function(list) {
         return list.asJson;
       },
+      AttributeValueList: function(_1, list, _2) {
+        return ["list", ...(list.asJson || [])];
+      },
       AttributeReference: function(ns, identifier, attrs) {
         var result = doAttrLookup(ns.asJson[0], identifier.asJson);
 
@@ -548,17 +705,16 @@ function createSemantics(grammar) {
       InputDeclaration: function(_, name, kind) {
         return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
       },
-      OutputDeclaration: function(_1, name, kind, _2, expr) {
+      OutputDeclaration: function(_1, name, type, shape, _2, expr) {
         var rhsValue = expr.asJson[0];
 
         if (!rhsValue) {
-          return ["__retval", name.asJson, ["_sf_local", name.asJson]];
+          rhsValue = ["_sf_local", name.asJson];
         }
 
-        if (rhsValue[0] !== ["_sf_local"]) {
-          rhsValue = identityExpr(rhsValue);
-        }
-
+        rhsValue = rewriteExpressionWithType(type.asJson[0] && type.asJson[0][0],
+            rewriteExpressionWithShape(shape.asJson[0] && shape.asJson[0][0],
+                rhsValue));
         return ["__retval", name.asJson, rhsValue];
       },
     }

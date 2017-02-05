@@ -33,6 +33,7 @@ function compileAndTest(source: string): Promise<string> {
 
 var testCases = [
   ...require('./fixtures/simple'),
+  ...require('./fixtures/loop'),
   ...require('./fixtures/errors'),
   ...require('./fixtures/arguments'),
   ...require('./fixtures/attributes'),

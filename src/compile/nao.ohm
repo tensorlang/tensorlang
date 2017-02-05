@@ -12,23 +12,24 @@ NaoRules {
 	TopLevelDecl = nl*
 		( FunctionDeclaration
 		| GraphDefinition
-		)
+		| VariableDeclaration
+		) nl*
 
 	FunctionDeclaration = #(func ws+ identifier) FunctionSignature FunctionBlock
 	FunctionLiteral = func FunctionSignature FunctionBlock
 	FunctionTypeLiteral = func FunctionSignature
-	FunctionSignature = FunctionAttributes? FunctionInputs
+	FunctionSignature = FunctionAttributes? FunctionInputs?
 	FunctionAttributes = "[" FunctionParameters<FunctionAttributeType, "]"> "]"
 	FunctionAttributeType = AttributeType? (">=" integer)? ("=" AttributeValue)?
 	FunctionInputs = "(" FunctionParameters<TensorKind, ")"> ")"
 	FunctionParameters<type, la> = ListOfLookahead<FunctionParameter<type>, ",", la>
 	FunctionParameter<type> = identifier type?
-	FunctionBlock = "{" FunctionBody nl* "}" nl*
+	FunctionBlock = "{" FunctionBody nl* "}"
 	FunctionBody = FunctionElement*
 	FunctionElement = nl*
 	    ( OutputDeclaration
+	    | VariableDeclaration
 	    | Assignment
-	    | AfterStatement
 	    | Expression
 	    ) #sc
 
@@ -36,11 +37,16 @@ NaoRules {
 	GraphBody = GraphElement*
 	GraphElement = nl*
 	    ( InputDeclaration
+	    | VariableDeclaration
 	    | OutputDeclaration
 	    | Assignment
-	    | AfterStatement
 	    | Expression
 	    ) #sc
+
+	// As in, "tensor reference"? This should make it clear that it's both a
+	// reference and can only be a tensor.
+	variableGlyph = "tref" | "var"
+	VariableDeclaration = #(variableGlyph ws+) identifier TensorType? TensorShape "=" Expression
 
 	InputGlyph = "->" | "\u2192"
 	OutputGlyph = "<-" | "\u2190" | "emit"
@@ -71,11 +77,11 @@ NaoRules {
 	  | quint
 
 	InputDeclaration = InputGlyph identifier TensorKind?
-	OutputDeclaration = OutputGlyph identifier (TensorKind? equal Expression)?
+	OutputDeclaration = OutputGlyph identifier (TensorType? TensorShape? equal Expression)?
 	OutputTypeDeclaration = OutputGlyph identifier TensorKind -- output
 
-	AfterStatement = #(after ws+ "__leaves") "{" nl* AfterBody "}" nl*
-	AfterBody = GraphElement*
+	AfterExpression = #(after ws+ "__leaves") "{" nl* AfterBody "}"
+	AfterBody = GraphElement+
 
 	identifierStart = letter | "_"
 	identifierPart = alnum | "_"
@@ -136,7 +142,7 @@ NaoRules {
 	stringLiteral (a string)
 	   =  "\"" (char | "\'")* "\""
 
-	Assignment = #(identifier ws+) TensorKind? "=" Expression
+	Assignment = #(identifier ws+) TensorType? TensorShape? "=" Expression
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
 	Expression1 = NonemptyListOf<Expression2, reverseComposition>
 	Expression2 = NonemptyListOf<Expression3, relop>
@@ -147,7 +153,9 @@ NaoRules {
 	  = // |  "(" Expression ")"                -- parens
 	  | TensorLiteral
 		| ListLiteral
+		| FunctionLiteral
 		| IfExpression
+		| AfterExpression
 		| RecExpression
 		| above -- aboveRef
 		| here -- hereRef
@@ -159,13 +167,18 @@ NaoRules {
 	// TODO(adamb) Should also allow multiple then and else expressions.
 	IfExpression = #("if" ws+) Expression "{" nl* Expression #sc "}" "else" "{" nl* Expression #sc "}"
 
-	RecExpression = #("rec" ws+) RecInitializers RecCondition RecBody
+  recGlyph = "rec" | "for"
+	RecExpression = #(recGlyph ws+) RecInitializers RecCondition RecBody
 	RecInitializers = (Assignment #sc)+
 	RecCondition = Expression
-	RecBody = "{" nl* (RecBodyExpression #sc)+ "}"
+	RecBody = "{" RecBodyExpression+ nl* "}"
 	RecBodyExpression
-		= Expression
-		| OutputDeclaration
+		= nl*
+		( OutputDeclaration
+		| VariableDeclaration
+		| Assignment
+		| Expression
+		) #sc
 
 	indexSuffix = ":" (indexIdentifier | indexNumber)
 	indexIdentifier = identifier
@@ -185,7 +198,7 @@ NaoRules {
 	AttributeList<la> = nonemptyListOfLookahead<AttributeEntry, ",", la>
 
 	AttributeBlockWithEllipsis = #("[" nl*) AttributeListWithEllipsis<"]"> nl* "]"
-	AttributeListWithEllipsis<la> = nonemptyListOfLookahead<(AttributeEntry | "..."), ",", la>
+	AttributeListWithEllipsis<la> = ListOfLookahead<(AttributeEntry | "..."), ",", la>
 	AttributeEntry = AttributeName ":" AttributeValue
 	AttributeName = identifier
 	AttributeValue
@@ -193,9 +206,12 @@ NaoRules {
 	  | FunctionLiteral
 	  | TensorShape
 	  | PrimitiveLiteral
-		| AttributeReference
+	  | AttributeReference
+	  | ListLiteral
 	AttributeReference =
 		#(invocationNamespace? identifier) AttributeBlockWithEllipsis?
+	AttributeLiteral
+	  = PrimitiveLiteral
 	PrimitiveLiteral
 	  = number  -- number
 	  | "true"  -- true
@@ -206,6 +222,7 @@ NaoRules {
 	ListLiteralEntry =
 	  | ListLiteral
 		| Expression
+		| TensorShape
 
 	TensorLiteral = TensorLiteralElement
 	TensorLiteralElement
@@ -214,7 +231,8 @@ NaoRules {
 
 	AttributeValueList = "[" ListOfLookahead<AttributeValueListEntry, ",", "]"> "]"
 	AttributeValueListEntry
-	  = TensorLiteral
+	  = PrimitiveLiteral
+		| AttributeValueList
 	  | TensorShape
 
 	// TODO(adamb) Implement these next!
