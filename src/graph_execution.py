@@ -17,11 +17,13 @@ def eprint(*args, **kwargs):
 def create_session():
   config = tf.ConfigProto(
     # log_device_placement=True,
-    operation_timeout_in_ms=60000,
+    operation_timeout_in_ms=20000,
     inter_op_parallelism_threads=2,
   )
 
   return tf.Session(config=config)
+
+import inspect
 
 _summary_writer = None
 def run_session(sess, result_pattern, feed_dict):
@@ -29,16 +31,16 @@ def run_session(sess, result_pattern, feed_dict):
 
   # HACK(adamb) Should parameterize this
   run_name = 'test'
-  _summary_writer = tf.train.SummaryWriter('./logdir/%s' % run_name, sess.graph)
-  # eprint(tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS))
+  _summary_writer = tf.summary.FileWriter('./logdir/%s' % run_name, sess.graph)
 
   tf.global_variables_initializer().run()
+
   coord = tf.train.Coordinator()
 
-  # run_options = tf.RunOptions(
-  #   trace_level=tf.RunOptions.FULL_TRACE
-  # )
-  # run_metadata = tf.RunMetadata()
+  run_options = tf.RunOptions(
+    # trace_level=tf.RunOptions.FULL_TRACE
+  )
+  run_metadata = tf.RunMetadata()
 
   threads = tf.train.start_queue_runners(coord=coord)
 
@@ -47,8 +49,8 @@ def run_session(sess, result_pattern, feed_dict):
     result_tensors = sess.run(
       fetches=ops,
       feed_dict=feed_dict,
-      # options=run_options,
-      # run_metadata=run_metadata,
+      options=run_options,
+      run_metadata=run_metadata,
     )
 
     return dict(zip(result_names, result_tensors))
@@ -73,12 +75,18 @@ def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict):
     )
 
     # NOTE(adamb) Could also store files to copy out in assets_collection
-    js_py_func_data_tensor = sess.graph.get_tensor_by_name("py_funcs_json:0")
-    js_py_func_data = js_py_func_data_tensor.eval().decode('utf-8')
-    py_func_data = json.loads(js_py_func_data)
-    # eprint('loaded py_func_data', py_func_data)
-    py_importer = graph_ffi.PythonImporter()
-    py_importer.restore_py_funcs(script_ops._py_funcs, py_func_data)
+    js_py_func_data_tensor = None
+    try:
+      js_py_func_data_tensor = sess.graph.get_tensor_by_name("py_funcs_json:0")
+    except KeyError as e:
+      pass
+
+    if js_py_func_data_tensor is not None:
+      js_py_func_data = js_py_func_data_tensor.eval().decode('utf-8')
+      py_func_data = json.loads(js_py_func_data)
+      # eprint('loaded py_func_data', py_func_data)
+      py_importer = graph_ffi.PythonImporter()
+      py_importer.restore_py_funcs(script_ops._py_funcs, py_func_data)
 
     return run_session(sess, result_pattern, feed_dict)
 
