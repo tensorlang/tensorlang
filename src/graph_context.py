@@ -62,29 +62,19 @@ class SentinelContextDelegate:
 
 class ProxyContext:
   def __init__(self, other,
+      proxy=None,
       input_map=None,
       input_keys=None,
       input_values=None,
       proxy_names=None,
       name_cache=None):
+    self._proxy = proxy
     self._placeholder_op_cache = {}
     self._other = other
-
-    if proxy_names == None:
-      proxy_names = set()
-    self._proxy_names = proxy_names
 
     if input_map == None:
       input_map = OrderedDict()
     self._input_map = input_map
-
-    if input_keys == None:
-      input_keys = []
-    self._input_keys = input_keys
-
-    if input_values == None:
-      input_values = []
-    self._input_values = input_values
 
     if name_cache == None:
       name_cache = {}
@@ -100,22 +90,9 @@ class ProxyContext:
       delegate = delegate._delegate
 
     d._delegate = ProxyContext(d._delegate,
-        proxy_names=self._proxy_names,
-        input_keys=self._input_keys,
-        input_values=self._input_values,
+        proxy=self._proxy,
         input_map=self._input_map)
     return d
-
-  # def duplicate(self):
-  #   pc = ProxyContext(self._other.duplicate(),
-  #       proxy_names=self._proxy_names,
-  #       input_keys=self._input_keys,
-  #       input_values=self._input_values,
-  #       input_map=self._input_map,
-  #       name_cache=self._placeholder_name_cache)
-  #   pc._placeholder_op_cache = dict(self._placeholder_op_cache)
-  #
-  #   return pc
 
   def clear_placeholder_op_cache(self):
     self._placeholder_op_cache = {}
@@ -125,15 +102,6 @@ class ProxyContext:
 
   def input_map(self):
     return OrderedDict(self._input_map)
-
-  def input_keys(self):
-    return self._input_keys
-
-  def input_values(self):
-    return self._input_values
-
-  def proxy_names(self):
-    return self._proxy_names
 
   def call(self, fn, args, kwargs):
     # Operations on queues mean we have to do gross stuff like inspect return
@@ -154,47 +122,7 @@ class ProxyContext:
     if v.graph == tf.get_default_graph():
       return v
 
-    return self._proxy(v, None)[1]
-
-  def _proxy(self, v, placeholder_name):
-    t = type(v)
-    if t != tf.Operation and t != tf.Tensor and t != tf.Variable:
-      eprint("skipping proxy placeholder for", v)
-      return (False, v)
-
-    p = None
-    with tf.name_scope(None):
-      with tf.control_dependencies(None):
-        if isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype:
-          eprint("creating ref proxy for", v)
-
-          p = tf.Variable(
-              initial_value="", # TODO(adamb) Should be a zero value for the dtype
-              trainable=False,
-              collections=[],
-              name=placeholder_name,
-              dtype=v.dtype.base_dtype,
-              validate_shape=False)
-          p.set_shape(v.get_shape())
-        else:
-          p = tf.placeholder(v.dtype, shape=v.get_shape(), name=placeholder_name)
-
-    eprint("creating proxy placeholder for", self, v.graph, v, p)
-
-    if placeholder_name and placeholder_name != p.op.name:
-      raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
-
-    self._proxy_names.add(p.op.name)
-    if isinstance(p, tf.Variable):
-      self._proxy_names.add("%s/read" % p.op.name)
-      self._proxy_names.add("%s/Assign" % p.op.name)
-      self._proxy_names.add("%s/initial_value" % p.op.name)
-
-    if p.name not in self._input_map:
-      self._input_map[p.name] = v
-      self._input_keys.append(p.name)
-      self._input_values.append(v)
-    return (True, p)
+    return self._proxy(self._input_map, v, None)[1]
 
   def get_index(self, target, index):
     return self._maybe_proxy(self._other.get_index(target, index))
@@ -221,7 +149,7 @@ class ProxyContext:
     else:
       placeholder_name = "Proxy_%d" % len(self._input_map)
 
-    did_proxy, v = self._proxy(self._other.get_local(name), placeholder_name)
+    did_proxy, v = self._proxy(self._input_map, self._other.get_local(name), placeholder_name)
     if did_proxy:
       if name not in self._placeholder_name_cache:
         self._placeholder_name_cache[name] = v.op.name

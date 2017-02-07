@@ -399,6 +399,51 @@ class TopLevel:
     # create variables on the fly. Within a while cond/body, they should not. Otherwise,
     # the can (e.g. when compiling a graph { ... } expression)
 
+
+    proxy_names = set()
+    input_keys = []
+    input_values = []
+
+    def proxy(input_map, v, placeholder_name):
+      t = type(v)
+      if t != tf.Operation and t != tf.Tensor and t != tf.Variable:
+        eprint("skipping proxy placeholder for", v)
+        return (False, v)
+
+      p = None
+      with tf.name_scope(None):
+        with tf.control_dependencies(None):
+          if isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype:
+            eprint("creating ref proxy for", v)
+
+            p = tf.Variable(
+                initial_value="", # TODO(adamb) Should be a zero value for the dtype
+                trainable=False,
+                collections=[],
+                name=placeholder_name,
+                dtype=v.dtype.base_dtype,
+                validate_shape=False)
+            p.set_shape(v.get_shape())
+          else:
+            p = tf.placeholder(v.dtype, shape=v.get_shape(), name=placeholder_name)
+
+      eprint("creating proxy placeholder for", self, v.graph, v, p)
+
+      if placeholder_name and placeholder_name != p.op.name:
+        raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
+
+      proxy_names.add(p.op.name)
+      if isinstance(p, tf.Variable):
+        proxy_names.add("%s/read" % p.op.name)
+        proxy_names.add("%s/Assign" % p.op.name)
+        proxy_names.add("%s/initial_value" % p.op.name)
+
+      if p.name not in input_map:
+        input_map[p.name] = v
+        input_keys.append(p.name)
+        input_values.append(v)
+      return (True, p)
+
     eprint('init_exprs', init_exprs)
     initial_value_ctx = ctx.subcontext()
     initial_tensor_list = None
@@ -411,7 +456,7 @@ class TopLevel:
 
     # We need to put placeholders in scratch graph for all init values,
     # all upvals
-    proxyctx = graph_context.ProxyContext(initial_value_ctx)
+    proxyctx = graph_context.ProxyContext(initial_value_ctx, proxy=proxy)
 
     g = tf.get_default_graph()
 
@@ -431,16 +476,13 @@ class TopLevel:
     body_meta_graph_def, _ = self._sf_while_inner(body_ctx, body_exprs)
 
     input_map = proxyctx.input_map()
-    input_keys = proxyctx.input_keys()
-    input_values = proxyctx.input_values()
     # input_map_shapes = [v.get_shape() for v in input_values]
     # eprint("while input_map_shapes", input_map_shapes)
-    eprint("while names to remove", proxyctx.proxy_names())
+    eprint("while names to remove", proxy_names)
 
     # HACK(adamb) Don't actually import any nodes that are only proxies.
     #     This should probably be done automatically by the TF import
     #     logic, but empirically this is not the case.
-    proxy_names = proxyctx.proxy_names()
     self._while_prune(cond_meta_graph_def, proxy_names)
     self._while_fix_colocations(cond_meta_graph_def, proxy_names)
 
