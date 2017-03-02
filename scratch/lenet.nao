@@ -1,0 +1,169 @@
+import (
+  summaryWriter "summary_writer"
+  mnistFormat   "mnist_data"
+
+  tf            "tensorflow:"
+  nn            "tensorflow:nn"
+  summary       "tensorflow:summary"
+  train         "tensorflow:train"
+)
+
+func convLayer(input, weights, biases) {
+  input
+  nn.conv2d[
+    strides: [1, 1, 1, 1],
+    padding: "SAME",
+  ](^, weights)
+  nn.bias_add(^, biases)
+  nn.relu(^)
+  nn.max_pool[
+    ksize: [1, 2, 2, 1],
+    strides: [1, 2, 2, 1],
+    padding: "SAME",
+  ](^)
+  emit s = ^
+}
+
+func fullyConnected(input, weights, biases) {
+  // Fully connected layer. Note that the '+' operation automatically
+  // broadcasts the biases.
+  input
+  tf.matmul(^, weights)
+  ^ + biases
+  emit s = ^
+}
+
+func makeNn[] {
+  // 5x5 filter, depth 32. Could also specify attr "seed"
+  var conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
+  var conv1_biases float <32> = 0
+  var conv2_weights float <5, 5, 32, 64> = tf.truncated_normal[shape: <5, 5, 32, 64>, stddev: 0.1]()
+  var conv2_biases float <64> = 0.1
+  // Fully connected, depth 512
+  // IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * 64
+  var fc1_weights float <3136, 512> = tf.truncated_normal[shape: <3136, 512>, stddev: 0.1]()
+  var fc1_biases float <512> = 0.1
+  var fc2_weights float <512, 10> = tf.truncated_normal[shape: <512, 10>, stddev: 0.1]()
+  var fc2_biases float <10> = 0.1
+
+  let a = func (input) {
+    input
+    convLayer(^, conv1_weights, conv1_biases)
+    convLayer(^, conv2_weights, conv2_biases)
+    tf.reshape(^, {-1, 3136})
+
+    fullyConnected(^, fc1_weights, fc1_biases)
+    fullyConnected(^, fc2_weights, fc2_biases)
+    <- r = ^
+  }
+  emit apply = a
+
+  let d = func () {
+//    summaryWriter.Debug(conv1_biases)
+//    summaryWriter.Debug(conv2_biases)
+//    summaryWriter.Debug(fc2_biases)
+
+//    summaryWriter.Debug(fc2_weights)
+//    summaryWriter.Debug(fc2_biases)
+    <- r = after __leaves { 0 }
+  }
+  emit dump = d
+}
+
+func trainNn[fn, learningRate] {
+  nao.var_transform[
+    fn: func(data float, label double <?,10>, step int32) {
+      fn(data) -- prediction
+      nn.softmax_cross_entropy_with_logits(logits: ^, labels: label) -- xEntropy
+      // tf.reduce_mean(xEntropy) -- xEntropy
+      // summary.scalar(^) -- crossEntropy
+      // summaryWriter.AddWithStep(^, step)
+
+      tf.argmax(prediction, 1) == tf.argmax(label, 1) -- correct_prediction
+      tf.reduce_mean(tf.cast(^, tf.float32))
+      summary.scalar(^) -- accuracy
+      summaryWriter.AddWithStep(^, step)
+
+      emit w = after __leaves { tf.reduce_mean(xEntropy) }
+    },
+    macro: func [output, trainable] {
+      let opt = train.GradientDescentOptimizer[learning_rate: learningRate]()
+      opt:minimize[var_list: trainable, loss: output]()
+      emit t = ^
+    },
+  ]()
+  emit e = ^
+}
+
+graph testMnistFormat {
+  let imagesFile = "../MNIST_data/train-images-idx3-ubyte.gz"
+  let labelsFile = "../MNIST_data/train-labels-idx1-ubyte.gz"
+
+  // Load images file
+  mnistFormat.ReadImages(imagesFile) -- allImages
+  mnistFormat.ReadLabels(labelsFile) -- allLabels
+
+  // Make new queue, add mnist data to it.
+  let q = tf.RandomShuffleQueue[
+    capacity: 60000,
+    min_after_dequeue: 0,
+    dtypes: {tf.float64, tf.float32},
+    shapes: {<10>, <784>},
+  ]()
+
+  let qRef = q:queue_ref
+  nao.enqueue_many(qRef, {allLabels, allImages})
+
+  let someNn = makeNn[]
+  let myNn = someNn:apply
+  let trainStep = trainNn[fn: myNn, learningRate: 0.01]
+  // let dump = someNn:dump
+
+  let maxSteps = 400
+  let f = for let step int32 <> = 0; step < maxSteps {
+    let batchSize = 100
+
+    let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
+
+    let labels = v:0
+    tf.reshape(v:1, [-1, 28, 28, 1]) -- images
+
+    myNn(^)
+    tf.argmax(^, 1)
+    tf.to_int32(^)
+    tf.dynamic_partition[
+      num_partitions: 10,
+    ](images, ^) -- partitionedImages
+    summary.image(partitionedImages:0) -- image0s
+    summaryWriter.AddWithStep(image0s, step)
+    summary.image(partitionedImages:1) -- image1s
+    summaryWriter.AddWithStep(image1s, step)
+    summary.image(partitionedImages:2) -- image2s
+    summaryWriter.AddWithStep(image2s, step)
+    summary.image(partitionedImages:3) -- image3s
+    summaryWriter.AddWithStep(image3s, step)
+    summary.image(partitionedImages:4) -- image4s
+    summaryWriter.AddWithStep(image4s, step)
+    summary.image(partitionedImages:5) -- image5s
+    summaryWriter.AddWithStep(image5s, step)
+    summary.image(partitionedImages:6) -- image6s
+    summaryWriter.AddWithStep(image6s, step)
+    summary.image(partitionedImages:7) -- image7s
+    summaryWriter.AddWithStep(image7s, step)
+    summary.image(partitionedImages:8) -- image8s
+    summaryWriter.AddWithStep(image8s, step)
+    summary.image(partitionedImages:9) -- image9s
+    summaryWriter.AddWithStep(image9s, step)
+
+    trainStep(images, labels, step) -- reducedMean
+
+    // dump()
+    summaryWriter.Debug(reducedMean)
+
+    <- step = after __leaves { step + 1 }
+  }
+
+  tf.Assert(f:step == maxSteps, {"f:step == maxSteps"})
+
+  ← result = after __leaves { 1 }
+}

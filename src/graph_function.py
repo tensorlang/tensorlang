@@ -77,7 +77,6 @@ class PrimitiveFunction:
     if 'name' in self._params:
       name_param = self._params['name']
       kind = name_param.kind
-      eprint("name paramter kind", fn, kind)
       if kind == inspect.Parameter.KEYWORD_ONLY:
         self._name_is_kwdarg = True
       if kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
@@ -135,16 +134,15 @@ class PrimitiveFunction:
       args = [ctx, *args]
 
     eprint("Applying", "call %s with name %s args %s and kwargs %s"  % (self._fn, name, args, attrs))
-    eprint("self._name_is_kwdarg", self._name_is_kwdarg)
-    eprint("self._name_is_posarg", self._name_is_posarg)
 
     return ctx.call(self._fn, args, attrs)
 
 class SyntheticFunction:
-  def __init__(self, name, argnames, retnames, vardefs, metagraphdef):
+  def __init__(self, name, argnames, retnames, base_input_map, metagraphdef):
     self._nam = name
     self._argnames = argnames
     self._retnames = retnames
+    self._base_input_map = base_input_map
     # self._var_scope = None
     # self._vardefs = vardefs
     self._metagraphdef = metagraphdef
@@ -176,6 +174,8 @@ class SyntheticFunction:
     return self._nam
 
   def _input_map(self, existing):
+    existing = dict(existing)
+    existing.update(self._base_input_map)
     return existing
     # varmap = self._lazy_define_vars()
     #
@@ -206,19 +206,98 @@ class SyntheticFunction:
         nodes.sort()
         eprint('error, but got nodes', nodes)
         raise e
+      except ValueError as ve:
+        eprint('error, but tried to import', self._metagraphdef)
+        raise ve
       # eprint('apply_kw var_list', var_list)
 
     retvals = [g.get_tensor_by_name("%s/%s" % (scope_name, n)) for n in self._retnames]
 
     return RetvalBag(dict(zip(self._retnames, retvals)))
 
-  def apply_kw(self, visitor, scope_name, attrs, kwargs):
+  def apply_kw(self, visitor, ctx, scope_name, attrs, kwargs):
     return self._do_apply(scope_name, self._input_map(kwargs))
 
   # TODO(adamb) Support attrs for synthetic functions!
-  def apply(self, visitor, scope_name, attrs, args):
+  def apply(self, visitor, ctx, scope_name, attrs, args):
     return self._do_apply(scope_name, self._input_map(dict(zip(self._argnames, args))))
 
+
+# HACK(adamb) We need to be able to pass in our own custom instances of
+
+from tensorflow.python.training import optimizer
+from tensorflow.python.framework import ops
+
+class _TensorRefWrapper(optimizer._OptimizableVariable):
+  def __init__(self, ref):
+    self._ref = ref
+
+  def target(self):
+    return self._ref
+
+  def update_op(self, optimizer, g):
+    if isinstance(g, ops.Tensor):
+      return optimizer._apply_dense(g, self._ref)  # pylint: disable=protected-access
+    else:
+      assert isinstance(g, ops.IndexedSlices), ("Gradient ", g, " is neither a "
+                                                "tensor nor IndexedSlices.")
+      # pylint: disable=protected-access
+      return optimizer._apply_sparse_duplicate_indices(g, self._ref)
+
+prev_get_processor = optimizer._get_processor
+def _get_processor(v):
+  if isinstance(v, tf.Tensor):
+    return _TensorRefWrapper(v)
+  return prev_get_processor(v)
+optimizer._get_processor = _get_processor
+
+class TransformedFunction:
+  def __init__(self, name, fn, macro):
+    self._nam = name
+    self._fn = fn
+    self._macro = macro
+
+  def _name(self):
+    return self._nam
+
+  def _apply(self, impl, visitor):
+    vars = []
+    def var_reference(var):
+      vars.append(var)
+
+    eprint("about to apply!")
+    visitor.add_variable_listener(var_reference)
+    try:
+      retvals = impl()
+    finally:
+      visitor.remove_variable_listener(var_reference)
+
+    output = retvals.get(None)
+
+    macro_attrs = {
+      "output": output,
+      "trainable": vars,
+    }
+
+    eprint("macro_attrs", macro_attrs)
+
+    out = self._macro.apply_attrs(visitor, macro_attrs)
+
+    with tf.control_dependencies([out.get(None)]):
+      return tf.identity(output)
+
+
+  def apply_kw(self, visitor, ctx, scope_name, attrs, kwargs):
+    def _apply_kw():
+      return self._fn.apply_kw(visitor, ctx, scope_name, None, kwargs)
+
+    return self._apply(_apply_kw, visitor)
+
+  def apply(self, visitor, ctx, scope_name, attrs, args):
+    def _apply():
+      return self._fn.apply(visitor, ctx, scope_name, None, args)
+
+    return self._apply(_apply, visitor)
 class ImportedPythonFunction:
   def __init__(self, fn):
     self._fn = fn
@@ -266,6 +345,8 @@ class DeclaredMacro:
 
     for retval_name, retval_argname in self._retval_specs():
       returned[retval_name] = ctx.get_local(retval_argname)
+
+    eprint("returned", returned)
 
     return RetvalBag(returned)
 

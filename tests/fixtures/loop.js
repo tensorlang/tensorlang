@@ -3,11 +3,32 @@
 
 module.exports = [
   {
-    name: "loop ???",
+    name: "loop with var being updated",
+    action: "test",
+    source: `
+var j int32 <> = 0
+graph testLoop {
+  // j = j + 2
+  let out = for let x = 1; x <= 5 {
+    j = j + 1
+    <- x = after __leaves { x + 1 }
+  }
+
+  tf.Assert(out:x >= 0, {"out:x >= 0", out:x})
+
+  after __leaves {
+    tf.Assert(j == 5, {"j == 5", j})
+  }
+
+  ← result = after __leaves { 0 }
+}
+`,
+  },
+  {
+    name: "loop with var as function arg",
     action: "test",
     source: `import nn "tensorflow:nn"
 
-tref conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
 func sum(b, w) {
   b
   nn.conv2d[
@@ -17,8 +38,9 @@ func sum(b, w) {
   emit s = ^
 }
 
+var conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
 graph testLoop {
-  out = rec x = 1; x <= 5 {
+  let out = for let x = 1; x <= 5 {
     sum(tf.truncated_normal[shape: <1, 28, 28, 1>, stddev: 0.1](), conv1_weights)
 
     <- x = after __leaves { x + 1 }
@@ -31,11 +53,11 @@ graph testLoop {
 `,
   },
   {
-    name: "loop ???",
+    name: "loop with var as function closure",
     action: "test",
     source: `import nn "tensorflow:nn"
 
-tref conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
+var conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
 func sum(b) {
   b
   nn.conv2d[
@@ -46,7 +68,7 @@ func sum(b) {
 }
 
 graph testLoop {
-  out = rec x = 1; x <= 5 {
+  let out = for let x = 1; x <= 5 {
     sum(tf.truncated_normal[shape: <1, 28, 28, 1>, stddev: 0.1]())
 
     <- x = after __leaves { x + 1}
@@ -67,8 +89,8 @@ func sum(a, b) {
 }
 
 graph testLoop {
-  tref a int32<> = 1
-  out = rec x = 1; x <= 5 {
+  var a int32<> = 1
+  let out = for let x = 1; x <= 5 {
     a + 5
 
     <- x = sum(x, 1)
@@ -85,7 +107,7 @@ graph testLoop {
     action: "test",
     source: `
 graph testLoop {
-  out = rec x = 1; x <= 5 {
+  let out = for let x = 1; x <= 5 {
     <- x = x + 1
   }
 
@@ -104,7 +126,7 @@ func isFiveOrLess(a) {
 }
 
 graph testLoop {
-  out = rec x = 1; isFiveOrLess(x) {
+  let out = for let x = 1; isFiveOrLess(x) {
     <- x = x + 1
   }
 
@@ -123,7 +145,7 @@ func sum(a, b) {
 }
 
 graph testLoop {
-  out = rec x = 1; x <= 5 {
+  let out = for let x = 1; x <= 5 {
     <- x = sum(x, 1)
   }
 
@@ -142,8 +164,8 @@ func sum(a, b) {
 }
 
 graph testLoop {
-  tref a int32<> = 1
-  out = rec x = 1; x <= 5 {
+  var a int32<> = 1
+  let out = for let x = 1; x <= 5 {
     <- x = sum(x, a)
   }
 
@@ -158,8 +180,8 @@ graph testLoop {
     action: "test",
     source: `
 graph testLoop {
-  out = rec x = 1.0; y float <700> = 0; x <= 5.0 {
-    tref q float<700> = tf.truncated_normal[shape: <700>]()
+  let out = for let x = 1.0; let y float <700> = 0; x <= 5.0 {
+    var q float<700> = tf.truncated_normal[shape: <700>]()
     func () {
       emit s = q + 1.0
     } -- unity

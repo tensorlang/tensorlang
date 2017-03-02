@@ -3,7 +3,7 @@ func identityBool(z) {
 }
 
 graph testIdentityBool {
-  x = true
+  let x = true
   tf.Assert(identityBool(x), {""})
 
   after __leaves { ← result = 0 }
@@ -16,8 +16,8 @@ func doubleSum(a, b) {
 }
 
 graph testSum {
-  x = 1.0
-  y = 3.0
+  let x = 1.0
+  let y = 3.0
   tf.Assert(8.0 == doubleSum(x, y), {""})
 
   after __leaves { ← result = 0 }
@@ -164,7 +164,7 @@ graph testArrows {
 // split
 
 graph testLoop {
-  rec x = 1; x <= 5 {
+  for let x = 1; x <= 5 {
     <- x = x + 1
   } -- out
 

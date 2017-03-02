@@ -493,6 +493,9 @@ function createSemantics(grammar) {
       AfterExpression: function(_1, _2, _3, _4, _5, body, _6) {
         return ["_sf_after_leaves", ...body.asJson];
       },
+      VariableUpdate: function(name, _1, _2, rhs) {
+        return ["_named_var_update", name.asJson, rhs.asJson];
+      },
       VariableDeclaration: function(_1, _2, name, type, shape, _3, rhs) {
         return [
           "_named_var", name.asJson,
@@ -502,7 +505,7 @@ function createSemantics(grammar) {
                   rhs.asJson))
         ];
       },
-      Assignment: function(name, _1, type, shape, _2, rhs) {
+      LetAssignment: function(_1, _2, name, _3, type, shape, _4, rhs) {
         return rewriteExpressionWithType(type.asJson[0],
           rewriteExpressionWithShape(shape.asJson[0],
               rewriteExpressionWithName(name.asJson, rhs.asJson)));
@@ -525,8 +528,8 @@ function createSemantics(grammar) {
       IfExpression: function(_1, _2, cond, _3, _4, thenClause, _5, _6, _7, _8, _9, elseClause, _10, _11) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
-      RecExpression: function(_1, _2, initializers, condition, body) {
-        console.log('RecExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
+      ForExpression: function(_1, _2, initializers, condition, body) {
+        console.log('ForExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
         var retvals = [];
         var upvalNames = [];
         var bodyExprs = body.asJson.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, false));
@@ -539,13 +542,13 @@ function createSemantics(grammar) {
           [...upvals, ...initializers.asJson],
         ];
       },
-      RecInitializers: function(exprs, _2) {
+      ForInitializers: function(exprs, _2) {
         return exprs.asJson;
       },
-      RecBody: function(_1, exprs, _2, _3) {
+      ForBody: function(_1, exprs, _2, _3) {
         return exprs.asJson;
       },
-      RecBodyExpression: function(_1, expr, _2) {
+      ForBodyExpression: function(_1, expr, _2) {
         return expr.asJson
       },
       Expression1: function(subexpr) {
@@ -607,6 +610,7 @@ function createSemantics(grammar) {
       },
       Expression4: function(subexpr) {
         return reduceOperandList(subexpr.asJson, {
+          "%": "mod",
           "*": "multiply",
           "/": "divide",
         });

@@ -48,6 +48,9 @@ class SentinelContextDelegate:
   def get_attr(self, name):
     raise Exception("No such attribute: %s" % name)
 
+  def update_local(self, name, rhs):
+    raise Exception("No such local or function: %s" % name)
+
   def get_local(self, name):
     raise Exception("No such local or function: %s" % name)
 
@@ -63,11 +66,7 @@ class SentinelContextDelegate:
 class ProxyContext:
   def __init__(self, other,
       proxy=None,
-      input_map=None,
-      input_keys=None,
-      input_values=None,
-      proxy_names=None,
-      name_cache=None):
+      input_map=None):
     self._proxy = proxy
     self._placeholder_op_cache = {}
     self._other = other
@@ -75,10 +74,7 @@ class ProxyContext:
     if input_map == None:
       input_map = OrderedDict()
     self._input_map = input_map
-
-    if name_cache == None:
-      name_cache = {}
-    self._placeholder_name_cache = name_cache
+    self._placeholder_name_cache = {}
 
   def duplicate_for(self, other):
     d = other.duplicate()
@@ -114,18 +110,18 @@ class ProxyContext:
     except:
       raise Exception("Tried to call %s with args %s and kwargs %s"  % (fn, args, kwargs))
 
-  def _maybe_proxy(self, v):
+  def _maybe_proxy(self, v, name=None):
     t = type(v)
     if t != tf.Operation and t != tf.Tensor and t != tf.Variable:
-      return v
+      return (False, v)
 
     if v.graph == tf.get_default_graph():
-      return v
+      return (False, v)
 
-    return self._proxy(self._input_map, v, None)[1]
+    return self._proxy(self._input_map, v, name)
 
   def get_index(self, target, index):
-    return self._maybe_proxy(self._other.get_index(target, index))
+    return self._maybe_proxy(self._other.get_index(target, index))[1]
 
   def fully_qualified_package(self, name):
     return self._other.fully_qualified_package(name)
@@ -149,7 +145,7 @@ class ProxyContext:
     else:
       placeholder_name = "Proxy_%d" % len(self._input_map)
 
-    did_proxy, v = self._proxy(self._input_map, self._other.get_local(name), placeholder_name)
+    did_proxy, v = self._maybe_proxy(self._other.get_local(name), placeholder_name)
     if did_proxy:
       if name not in self._placeholder_name_cache:
         self._placeholder_name_cache[name] = v.op.name
@@ -225,6 +221,19 @@ class Context:
 
   def set_above(self, value):
     self._above = value
+
+  def update_local(self, name, rhs):
+    if name in self._locals:
+      v = self._locals[name]
+      if not isinstance(v, tf.Variable) and not (isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype):
+        raise Exception("%s not a variable: %s" % (name, v))
+      eprint("updating local", name, "from", v, "to", rhs)
+      v = tf.assign(v, rhs)
+      eprint("updated local", name, "is", v)
+      self._locals[name] = v
+      return v
+
+    return self._delegate.update_local(name, rhs)
 
   def define_local(self, name, value):
     if name in self._locals:

@@ -17,21 +17,23 @@ def eprint(*args, **kwargs):
 def create_session():
   config = tf.ConfigProto(
     # log_device_placement=True,
-    operation_timeout_in_ms=20000,
+    operation_timeout_in_ms=600000,
     inter_op_parallelism_threads=2,
   )
 
   return tf.Session(config=config)
 
 import inspect
+import datetime
 
 _summary_writer = None
 def run_session(sess, result_pattern, feed_dict):
   global _summary_writer
 
   # HACK(adamb) Should parameterize this
-  run_name = 'test'
+  run_name = datetime.datetime.utcnow().strftime("%F_%H-%M-%S")
   _summary_writer = tf.summary.FileWriter('./logdir/%s' % run_name, sess.graph)
+  eprint(tf.GraphKeys.QUEUE_RUNNERS, tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS))
 
   tf.global_variables_initializer().run()
 

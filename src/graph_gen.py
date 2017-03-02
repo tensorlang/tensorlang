@@ -23,6 +23,68 @@ import graph_context
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
+def _while_prune(meta_graph_def, prune_names):
+  graph_def = meta_graph_def.graph_def
+  nodes = graph_def.node
+  for ix in range(len(nodes) - 1, -1, -1):
+    n = nodes[ix]
+    if n.name in prune_names:
+      del nodes[ix]
+      eprint("n.name removed from graph_def!!", n.name)
+    else:
+      eprint("n.name not in proxy_names", n.name)
+
+
+def _while_fix_context_scope(meta_graph_def, import_scope):
+  col_defs = meta_graph_def.collection_def
+
+  if "while_context" not in col_defs:
+    return
+
+  wc_values = col_defs["while_context"].bytes_list.value
+  for wcd_ix in range(0, len(wc_values)):
+    while_context_bytes = wc_values[wcd_ix]
+    while_context_def = control_flow_pb2.WhileContextDef()
+    while_context_def.ParseFromString(while_context_bytes)
+    values_def = while_context_def.values_def
+    values = values_def.values
+    # for v_ix in range(0, len(values)):
+    #   values[v_ix] = import_scope + "/" + values[v_ix]
+
+    external_values = values_def.external_values
+    # for k in list(external_values.keys()):
+    #   external_values[k] = import_scope + "/" + external_values[k]
+
+    eprint("while_context_def", while_context_def, while_context_def.SerializeToString())
+    wc_values[wcd_ix] = while_context_def.SerializeToString()
+
+
+def _while_fix_colocations(meta_graph_def, input_map):
+  graph_def = meta_graph_def.graph_def
+  for node in graph_def.node:
+    # Rewrite the colocation attributes in the graph, since the
+    # names of new ops may have changed.
+    for key, value in node.attr.items():
+      if key != '_class':
+        continue
+
+      class_values = value.list.s
+      for ix in range(len(class_values) - 1, -1, -1):
+        class_value = class_values[ix]
+        if class_value.startswith(b'loc:@'):
+          op_name = class_value[5:].decode()
+          if not op_name in input_map:
+            eprint("Skipping replacement of", op_name)
+            continue
+          # replacement_name = input_map[op_name].name
+          # replacement = compat.as_bytes("loc:@" + replacement_name)
+          # eprint("Replacing", class_value, "with", replacement)
+          # class_values[ix] = replacement
+          # HACK(adamb) It would be much, much better to just do the replacement
+          #     commented out above, but we apparently can't replace a location
+          #     with a value pointing to the existing graph. Strange.
+          eprint("HACK(adamb) Removing", class_value)
+          del class_values[ix]
 
 class Nao:
   def __init__(self, visitor):
@@ -53,13 +115,44 @@ class Nao:
         eprint('error, but got nodes', nodes)
         raise ke
 
+  def enqueue_many(self, ctx, queue_ref, components, name=None):
+    if name is None:
+      name = tf.get_default_graph().unique_name("EnqueueMany").split("/")[-1]
+
+    ret = gen_data_flow_ops._queue_enqueue_many_v2(
+        queue_ref, components=components, name=name)
+
+    # NOTE(mrry): Not using a shape function because we need access to
+    # the Queue object.
+    # op = ret[0].op
+    # batch_dim = tensor_shape.Dimension(tensor_util.constant_value(op.inputs[1]))
+    # for output, shape in zip(op.values(), shapes):
+    #   output.set_shape(tensor_shape.TensorShape([batch_dim]).concatenate(shape))
+
+    return ret
 
   def dequeue_many(self, ctx, queue_ref, n, component_types=None, name=None):
     if name is None:
       name = tf.get_default_graph().unique_name("DequeueMany").split("/")[-1]
 
-    ret = gen_data_flow_ops._queue_dequeue_many(
+    ret = gen_data_flow_ops._queue_dequeue_many_v2(
         queue_ref, n=n, component_types=component_types, name=name)
+
+    # NOTE(mrry): Not using a shape function because we need access to
+    # the Queue object.
+    # op = ret[0].op
+    # batch_dim = tensor_shape.Dimension(tensor_util.constant_value(op.inputs[1]))
+    # for output, shape in zip(op.values(), shapes):
+    #   output.set_shape(tensor_shape.TensorShape([batch_dim]).concatenate(shape))
+
+    return ret
+
+  def dequeue(self, ctx, queue_ref, component_types=None, name=None):
+    if name is None:
+      name = tf.get_default_graph().unique_name("Dequeue").split("/")[-1]
+
+    ret = gen_data_flow_ops._queue_dequeue_v2(
+        queue_ref, component_types=component_types, name=name)
 
     # NOTE(mrry): Not using a shape function because we need access to
     # the Queue object.
@@ -102,41 +195,8 @@ class Nao:
   #     way to export a function/closure to a meta_graph_def. If we could convert
   #     these back and forth, we'd have a lot of power.
 
-  def transform(self, ctx, fn, macro, name=None):
-    with tf.Graph().as_default() as g:
-      # TODO(adamb) Should actually have captured the environment where the function was defined.
-      visitor = TopLevel()
-      proxyctx = graph_context.ProxyContext(ctx)
-      new_ctx = proxyctx.duplicate_for(fn._ctx)
-
-      arg_vars = []
-      for (arg_name, shape_expr, dtype_expr) in fn._arg_specs():
-        eprint("(arg_name %s, shape_expr %s, dtype_expr %s)" % (arg_name, shape_expr, dtype_expr))
-        arg_var = tf.placeholder(
-          name=arg_name,
-          dtype=visitor.visit(proxyctx, dtype_expr),
-          shape=visitor.visit(proxyctx, shape_expr),
-        )
-        arg_vars.append(arg_var)
-        proxyctx.define_local(arg_name, arg_var)
-
-      visitor._visit_exprs(proxyctx, fn._body())
-
-      retvals = [proxyctx.get_local(retval_argname) for retval_argname in fn._retval_argnames()]
-      trainable = tf.all_variables()
-
-      macro_attrs = {
-        "name": name or fn._name(),
-        "inputs": arg_vars,
-        "outputs": retvals,
-        "trainable": trainable,
-      }
-      try:
-        return macro.apply_attrs(visitor, macro_attrs)
-      except Exception as e:
-        eprint("Encountered problem, graph is", g.as_graph_def())
-        raise e
-
+  def var_transform(self, ctx, fn, macro, name=None):
+    return graph_function.TransformedFunction(name, fn, macro)
 
 class TopLevel:
   TYPES = {
@@ -161,6 +221,13 @@ class TopLevel:
   def __init__(self):
     self.nesting_level = 0
     self._python_importer = graph_ffi.PythonImporter()
+    self._variable_listeners = []
+
+  def add_variable_listener(self, listener):
+    self._variable_listeners.append(listener)
+
+  def remove_variable_listener(self, listener):
+    self._variable_listeners.remove(listener)
 
   # "primitive" values
   def _sf_type(self, ctx, name):
@@ -327,69 +394,6 @@ class TopLevel:
       eprint('error, but got nodes', nodes)
       raise ke
 
-  def _while_prune(self, meta_graph_def, prune_names):
-    graph_def = meta_graph_def.graph_def
-    nodes = graph_def.node
-    for ix in range(len(nodes) - 1, -1, -1):
-      n = nodes[ix]
-      if n.name in prune_names:
-        del nodes[ix]
-        eprint("n.name removed from graph_def!!", n.name)
-      else:
-        eprint("n.name not in proxy_names", n.name)
-
-
-  def _while_fix_context_scope(self, meta_graph_def, import_scope):
-    col_defs = meta_graph_def.collection_def
-
-    if "while_context" not in col_defs:
-      return
-
-    wc_values = col_defs["while_context"].bytes_list.value
-    for wcd_ix in range(0, len(wc_values)):
-      while_context_bytes = wc_values[wcd_ix]
-      while_context_def = control_flow_pb2.WhileContextDef()
-      while_context_def.ParseFromString(while_context_bytes)
-      values_def = while_context_def.values_def
-      values = values_def.values
-      # for v_ix in range(0, len(values)):
-      #   values[v_ix] = import_scope + "/" + values[v_ix]
-
-      external_values = values_def.external_values
-      # for k in list(external_values.keys()):
-      #   external_values[k] = import_scope + "/" + external_values[k]
-
-      eprint("while_context_def", while_context_def, while_context_def.SerializeToString())
-      wc_values[wcd_ix] = while_context_def.SerializeToString()
-
-
-  def _while_fix_colocations(self, meta_graph_def, input_map):
-    graph_def = meta_graph_def.graph_def
-    for node in graph_def.node:
-      # Rewrite the colocation attributes in the graph, since the
-      # names of new ops may have changed.
-      for key, value in node.attr.items():
-        if key != '_class':
-          continue
-
-        class_values = value.list.s
-        for ix in range(len(class_values) - 1, -1, -1):
-          class_value = class_values[ix]
-          if class_value.startswith(b'loc:@'):
-            op_name = class_value[5:].decode()
-            if not op_name in input_map:
-              eprint("Skipping replacement of", op_name)
-              continue
-            # replacement_name = input_map[op_name].name
-            # replacement = compat.as_bytes("loc:@" + replacement_name)
-            # eprint("Replacing", class_value, "with", replacement)
-            # class_values[ix] = replacement
-            # HACK(adamb) It would be much, much better to just do the replacement
-            #     commented out above, but we apparently can't replace a location
-            #     with a value pointing to the existing graph. Strange.
-            eprint("HACK(adamb) Removing", class_value)
-            del class_values[ix]
-
   def _sf_while_loop(self, ctx, cond_expr, body_exprs, body_retvals, init_exprs):
     # Need to evaluate body_exprs first, looking for all variables that will be created
     # internally. Roll up into nested variable contexts. Unroll these contexts to be
@@ -405,42 +409,78 @@ class TopLevel:
     input_values = []
 
     def proxy(input_map, v, placeholder_name):
-      t = type(v)
-      if t != tf.Operation and t != tf.Tensor and t != tf.Variable:
-        eprint("skipping proxy placeholder for", v)
-        return (False, v)
-
       p = None
       with tf.name_scope(None):
         with tf.control_dependencies(None):
+          p_name = None
           if isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype:
             eprint("creating ref proxy for", v)
 
+            initial_value = 0
+            if v.dtype.base_dtype == tf.resource:
+              initial_value = None
+            elif v.dtype.base_dtype == tf.string:
+              initial_value = ""
+            elif v.dtype.base_dtype == tf.bool:
+              initial_value = False
+            elif v.dtype.base_dtype == tf.float16 or v.dtype.base_dtype == tf.float32 or v.dtype.base_dtype == tf.float64:
+              initial_value = 0.0
+
             p = tf.Variable(
-                initial_value="", # TODO(adamb) Should be a zero value for the dtype
+                initial_value=initial_value,
                 trainable=False,
                 collections=[],
                 name=placeholder_name,
                 dtype=v.dtype.base_dtype,
                 validate_shape=False)
             p.set_shape(v.get_shape())
+            p_name = "%s" % p.op.name
+            proxy_names.add(p_name)
+            proxy_names.add("%s/read" % p.op.name)
+            proxy_names.add("%s/Assign" % p.op.name)
+            proxy_names.add("%s/initial_value" % p.op.name)
+          elif isinstance(v, tf.Variable):
+            # return (False, v)
+
+            initial_value = 0
+            if v.dtype.base_dtype == tf.resource:
+              initial_value = None
+            elif v.dtype.base_dtype == tf.string:
+              initial_value = ""
+            elif v.dtype.base_dtype == tf.bool:
+              initial_value = False
+            elif v.dtype.base_dtype == tf.float16 or v.dtype.base_dtype == tf.float32 or v.dtype.base_dtype == tf.float64:
+              initial_value = 0.0
+
+            p = tf.Variable(
+                initial_value=initial_value,
+                trainable=False,
+                collections=[],
+                name=placeholder_name,
+                dtype=v.dtype.base_dtype,
+                validate_shape=False)
+            p.set_shape(v.get_shape())
+            p_name = "%s:0" % p.op.name
+            p = tf.get_default_graph().get_tensor_by_name(p_name)
+            v = v.graph.get_tensor_by_name("%s:0" % v.op.name)
+            proxy_names.add(p_name)
+            proxy_names.add("%s/read" % p.op.name)
+            proxy_names.add("%s/Assign" % p.op.name)
+            proxy_names.add("%s/initial_value" % p.op.name)
           else:
             p = tf.placeholder(v.dtype, shape=v.get_shape(), name=placeholder_name)
+            p_name = p.op.name
+            proxy_names.add(p.op.name)
 
-      eprint("creating proxy placeholder for", self, v.graph, v, p)
 
-      if placeholder_name and placeholder_name != p.op.name:
-        raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
+      eprint("creating proxy placeholder for", self, v.graph, p.name, p, v)
 
-      proxy_names.add(p.op.name)
-      if isinstance(p, tf.Variable):
-        proxy_names.add("%s/read" % p.op.name)
-        proxy_names.add("%s/Assign" % p.op.name)
-        proxy_names.add("%s/initial_value" % p.op.name)
+      # if placeholder_name and placeholder_name != p.op.name:
+      #   raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
 
-      if p.name not in input_map:
-        input_map[p.name] = v
-        input_keys.append(p.name)
+      if p_name not in input_map:
+        input_map[p_name] = v
+        input_keys.append(p_name)
         input_values.append(v)
       return (True, p)
 
@@ -483,11 +523,11 @@ class TopLevel:
     # HACK(adamb) Don't actually import any nodes that are only proxies.
     #     This should probably be done automatically by the TF import
     #     logic, but empirically this is not the case.
-    self._while_prune(cond_meta_graph_def, proxy_names)
-    self._while_fix_colocations(cond_meta_graph_def, proxy_names)
+    _while_prune(cond_meta_graph_def, proxy_names)
+    _while_fix_colocations(cond_meta_graph_def, proxy_names)
 
-    self._while_prune(body_meta_graph_def, proxy_names)
-    self._while_fix_colocations(body_meta_graph_def, proxy_names)
+    _while_prune(body_meta_graph_def, proxy_names)
+    _while_fix_colocations(body_meta_graph_def, proxy_names)
 
     body_retval_dict = dict(body_retvals)
     body_retval_names = []
@@ -527,7 +567,7 @@ class TopLevel:
         pass
       cond_import_scope = import_scope.name
 
-      self._while_fix_context_scope(cond_meta_graph_def, cond_import_scope)
+      _while_fix_context_scope(cond_meta_graph_def, cond_import_scope)
 
       return self._sf_while_embed(
           cond_import_scope,
@@ -545,7 +585,7 @@ class TopLevel:
         pass
       body_import_scope = import_scope.name
 
-      self._while_fix_context_scope(body_meta_graph_def, body_import_scope)
+      _while_fix_context_scope(body_meta_graph_def, body_import_scope)
 
       next_values = self._sf_while_embed(
           body_import_scope,
@@ -577,6 +617,7 @@ class TopLevel:
         parallel_iterations=1,
         back_prop=False,
       )
+      eprint("body_meta_graph_def", body_meta_graph_def)
       # eprint("have graph", tf.get_default_graph().as_graph_def(add_shapes=True))
     except KeyError as ke:
       # eprint("error, but body_meta_graph_def is", body_meta_graph_def)
@@ -644,16 +685,20 @@ class TopLevel:
 
       ctx.set_above(result)
 
+  def _named_var_update(self, ctx, name, rhs):
+    return ctx.update_local(name, rhs)
+
   def _named_var(self, ctx, name, shape, dtype, initializer):
     if initializer != None and not callable(initializer):
       # TODO(adamb) Check the shape of initializer
       shape = None
 
-    v = tf.get_variable(
+    v = tf.Variable(
         name=name,
-        initializer=initializer,
-        shape=shape,
+        initial_value=initializer,
+        expected_shape=shape,
         dtype=dtype)
+    eprint("named var", v, type(v))
 
     ctx.define_local(name, v)
 
@@ -731,6 +776,17 @@ class TopLevel:
       return pkg
 
   def visit(self, ctx, expr):
+    result = self._visit(ctx, expr)
+
+    # TODO(adamb) What about retval bags that contain variables?
+    if isinstance(result, tf.Variable) or (isinstance(result, tf.Tensor) and result.dtype._is_ref_dtype):
+      eprint("saw variable", result)
+      for listener in self._variable_listeners:
+        listener(result)
+
+    return result
+
+  def _visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
     # eprint("%s%s" % ('  ' * self.nesting_level, expr))
 

@@ -29,7 +29,8 @@ NaoRules {
 	FunctionElement = nl*
 	    ( OutputDeclaration
 	    | VariableDeclaration
-	    | Assignment
+	    | VariableUpdate
+	    | LetAssignment
 	    | Expression
 	    ) #sc
 
@@ -39,7 +40,8 @@ NaoRules {
 	    ( InputDeclaration
 	    | VariableDeclaration
 	    | OutputDeclaration
-	    | Assignment
+	    | VariableUpdate
+	    | LetAssignment
 	    | Expression
 	    ) #sc
 
@@ -47,6 +49,7 @@ NaoRules {
 	// reference and can only be a tensor.
 	variableGlyph = "tref" | "var"
 	VariableDeclaration = #(variableGlyph ws+) identifier TensorType? TensorShape "=" Expression
+	VariableUpdate = #(identifier ws+) "=" Expression
 
 	InputGlyph = "->" | "\u2192"
 	OutputGlyph = "<-" | "\u2190" | "emit"
@@ -142,7 +145,7 @@ NaoRules {
 	stringLiteral (a string)
 	   =  "\"" (char | "\'")* "\""
 
-	Assignment = #(identifier ws+) TensorType? TensorShape? "=" Expression
+	LetAssignment = #("let" ws+ identifier ws+) TensorType? TensorShape? "=" Expression
 	Expression  = Expression1 #(ws+ "--" ws+ identifier)?
 	Expression1 = NonemptyListOf<Expression2, reverseComposition>
 	Expression2 = NonemptyListOf<Expression3, relop>
@@ -156,7 +159,7 @@ NaoRules {
 		| FunctionLiteral
 		| IfExpression
 		| AfterExpression
-		| RecExpression
+		| ForExpression
 		| above -- aboveRef
 		| here -- hereRef
 		| #(invocationNamespace? identifier indexSuffix?) AttributeBlock? "(" ListOfLookahead<Expression, ",", ")"> ")" -- applyPos
@@ -167,16 +170,17 @@ NaoRules {
 	// TODO(adamb) Should also allow multiple then and else expressions.
 	IfExpression = #("if" ws+) Expression "{" nl* Expression #sc "}" "else" "{" nl* Expression #sc "}"
 
-  recGlyph = "rec" | "for"
-	RecExpression = #(recGlyph ws+) RecInitializers RecCondition RecBody
-	RecInitializers = (Assignment #sc)+
-	RecCondition = Expression
-	RecBody = "{" RecBodyExpression+ nl* "}"
-	RecBodyExpression
+  forGlyph = "rec" | "for"
+	ForExpression = #(forGlyph ws+) ForInitializers ForCondition ForBody
+	ForInitializers = (LetAssignment #sc)+
+	ForCondition = Expression
+	ForBody = "{" ForBodyExpression+ nl* "}"
+	ForBodyExpression
 		= nl*
 		( OutputDeclaration
 		| VariableDeclaration
-		| Assignment
+		| VariableUpdate
+		| LetAssignment
 		| Expression
 		) #sc
 
@@ -186,7 +190,7 @@ NaoRules {
 
 	relop       =  "<=" | "<" | "==" | "!=" | ">=" | ">"
 	addop       =  "+" | "-"
-	mulop       =  "*" | "/"
+	mulop       =  "*" | "/" | "%"
 
 	invocationNamespace = identifier "."
 
