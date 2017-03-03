@@ -766,13 +766,12 @@ class TopLevel:
       ctx.import_package(name, pkg)
 
   def _sf_package(self, ctx, name, *exprs):
-    subctx = ctx.subcontext()
-    with tf.variable_scope(name):
-      for expr in exprs:
-        self.visit(subctx, expr)
+    pkg = ctx.resolve_fully_qualified_package(name)
 
-      pkg = graph_function.Package(subctx)
-      ctx.define_fully_qualified_package(name, pkg)
+    subctx = pkg.ctx()
+    with tf.variable_scope(name):
+      self._visit_exprs(subctx, exprs)
+
       return pkg
 
   def visit(self, ctx, expr):
@@ -814,19 +813,23 @@ class TopLevel:
 
 from tensorflow.python.ops import script_ops
 
-def meta_graph_def_from_exprs(exprs):
-  with tf.Graph().as_default() as g:
-    visitor = TopLevel()
-    ctx = graph_context.Context(graph_context.SentinelContextDelegate())
-    ctx.import_package("tf", graph_function.PythonPackage(tf))
-    ctx.import_package("nao", graph_function.PythonPackage(Nao(visitor), prepend_with_context=True))
+def new_compilation_env():
+  g = tf.Graph()
+  visitor = TopLevel()
+  ctx = graph_context.Context(graph_context.SentinelContextDelegate())
+  ctx.import_package("tf", graph_function.PythonPackage(tf))
+  ctx.import_package("nao", graph_function.PythonPackage(Nao(visitor), prepend_with_context=True))
 
+  return g, visitor, ctx
+
+def meta_graph_def_from_exprs(exprs):
+  g, visitor, ctx = new_compilation_env()
+
+  with g.as_default():
     visitor._visit_exprs(ctx, exprs)
 
     # NOTE(adamb) Could also store files to copy out in assets_collection
     py_func_data = visitor._python_importer.dump_py_funcs(script_ops._py_funcs)
-    # eprint('saved py_func_data', py_func_data)
-
     js_py_func_data = tf.constant(json.dumps(py_func_data), name="py_funcs_json")
 
     meta_graph_def, _ = meta_graph.export_scoped_meta_graph()

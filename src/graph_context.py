@@ -189,6 +189,15 @@ class Context:
   def subcontext(self):
     return Context(self)
 
+  def resolve_fully_qualified_package(self, name):
+    if name in self._fully_qualified_packages:
+      return self._fully_qualified_packages[name]
+
+    subctx = self.subcontext()
+    pkg = graph_function.Package(subctx)
+    self.define_fully_qualified_package(name, pkg)
+    return pkg
+
   def define_fully_qualified_package(self, name, pkg):
     if name in self._fully_qualified_packages:
       raise Exception("Already defined package: %s" % name)
@@ -218,6 +227,9 @@ class Context:
     ctx._attrs = copy.copy(ctx._attrs)
     ctx._locals = copy.copy(ctx._locals)
     return ctx
+
+  def get_above(self):
+    return self._above
 
   def set_above(self, value):
     self._above = value

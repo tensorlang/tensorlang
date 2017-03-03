@@ -17,6 +17,7 @@ import graph_gen
 import graph_io
 import graph_query
 import graph_xform
+import graph_repl
 import graph_execution
 
 import tensorflow as tf
@@ -60,6 +61,9 @@ def main():
   parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^main/test[^/]*/([^_].*)$",
                       help="""Pattern to discover test graph results.""")
 
+  parser.add_argument("--repl", nargs='?', type=bool, default=False,
+                      help="""Start REPL""")
+
   parser.add_argument("--input-json", nargs='?', type=str,
                       help="""JSON file to load.""")
   parser.add_argument("--output-binary", nargs='?', type=bool, default=False,
@@ -97,6 +101,9 @@ def main():
   if FLAGS.run == None:
     FLAGS.run = True
 
+  if FLAGS.repl == None:
+    FLAGS.repl = True
+
   feed_dict = {}
   # Properly find and strip prefix of constants, loading them with given prefix to feed_dict
   if FLAGS.feed_constants:
@@ -133,6 +140,9 @@ def main():
       file=FLAGS.result,
       binary=FLAGS.result_binary,
     )
+
+  if FLAGS.repl:
+    graph_repl.run()
 
 if __name__ == '__main__':
   try:

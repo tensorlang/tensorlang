@@ -19,6 +19,7 @@ const opts = meow(`
       'root',                  // --root ./scratch
       'source',                // --source "graph agraph { one = 1 }"
       'compile',               // --compile foo.pbtxt
+      'parse',                 // --parse foo.json
       'compile-graph',         // --compile-graph foo.pbtxt
       'use-graph',             // --use-graph file.pbtxt
       // Path to GraphDef protobuf with constants to feed
@@ -64,8 +65,8 @@ if (inputs.length > 1) {
 const shouldRunGraph = flags.run || flags.feedConstants || flags.resultPrefix || !(flags.test || flags.compile || flags.compileGraph);
 const shouldTestGraph = flags.test;
 
-console.log(inputs);
-console.log(flags);
+console.warn(inputs);
+console.warn(flags);
 
 var input = inputs[0];
 var fromFile: ?string;
@@ -74,7 +75,7 @@ var fromString: ?string;
 
 function abortOnCatch(promise: Promise<any>) {
   promise.catch((err) => {
-    console.log(err);
+    console.warn(err);
     process.exit(1);
   });
 }
@@ -102,6 +103,7 @@ function maybeRun() {
 if (input || flags.source) {
   var source;
   var pkgRootDir = flags.root || process.cwd();
+  var parseTo = flags.parse;
   var compileTo = flags.compile;
   var compileGraphTo = flags.compileGraph;
   var compileToBinary = flags.compileBinary;
@@ -109,7 +111,7 @@ if (input || flags.source) {
   if (flags.source) {
     source = flags.source;
     if (input) {
-      console.log("Can't provide a package name and --source option.")
+      console.warn("Can't provide a package name and --source option.")
       process.exit(1);
     }
   } else {
@@ -157,23 +159,36 @@ if (input || flags.source) {
     .catch(() => { throw new Error("no such package: " + name); });
   }
 
-  var compilation: Promise<any>;
-  if (compileTo) {
-    fromFile = compileTo;
-    fromFileBinary = compileToBinary;
-    compilation = compile.compile("main", source, resolvePackage,
-        compileTo, compileGraphTo, compileToBinary);
+  if (parseTo) {
+    var parse = compile.parseString("main", source, resolvePackage)
+      .then((expr) => {
+        // HACK(adamb) This is just temporary until python owns the CLI.
+        if (parseTo === "-") {
+          process.stdout.write(JSON.stringify(expr));
+        } else {
+          fs.writeFileSync(parseTo, JSON.stringify(expr));
+        }
+      });
+    abortOnCatch(parse);
   } else {
-    compilation = compile.compileString("main", source, resolvePackage,
-        compileGraphTo, compileToBinary);
-    compilation.then((str) => { fromString = str; });
-  }
+    var compilation: Promise<any>;
+    if (compileTo) {
+      fromFile = compileTo;
+      fromFileBinary = compileToBinary;
+      compilation = compile.compile("main", source, resolvePackage,
+          compileTo, compileGraphTo, compileToBinary);
+    } else {
+      compilation = compile.compileString("main", source, resolvePackage,
+          compileGraphTo, compileToBinary);
+      compilation.then((str) => { fromString = str; });
+    }
 
-  compilation.then(() => {
-    maybeTest();
-    maybeRun();
-  });
-  abortOnCatch(compilation);
+    compilation.then(() => {
+      maybeTest();
+      maybeRun();
+    });
+    abortOnCatch(compilation);
+  }
 } else {
   fromFile = flags.useGraph;
   fromFileBinary = flags.useGraphBinary;

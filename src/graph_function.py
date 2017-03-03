@@ -39,6 +39,9 @@ class Package:
   def __init__(self, ctx):
     self._ctx = ctx
 
+  def ctx(self):
+    return self._ctx
+
   def apply(self, visitor, ctx, name, attrs, args):
     n, *_ = args
     value = self._ctx.get_local_strict(n)

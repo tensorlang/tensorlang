@@ -12,7 +12,10 @@ NaoRules {
 	TopLevelDecl = nl*
 		( FunctionDeclaration
 		| GraphDefinition
+		| LetAssignment
 		| VariableDeclaration
+    | VariableUpdate
+    | Expression
 		) nl*
 
 	FunctionDeclaration = #(func ws+ identifier) FunctionSignature FunctionBlock

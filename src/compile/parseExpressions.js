@@ -54,7 +54,7 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
 
 function processFunctionBodyExpr(upvalNames: string[], retvals: any[], isMacro: bool, expr) {
   if (expr[0] === "__retval") {
-    console.log('processFunctionBodyExpr', JSON.stringify(expr));
+    console.warn('processFunctionBodyExpr', JSON.stringify(expr));
     var [_, retName, retVal: any[]] = expr;
     var subName = expressionName(retVal);
     if (!subName) {
@@ -241,9 +241,9 @@ function rewriteExpressionWithShape(shape: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (shape) {
-      console.log("rewriting ", JSON.stringify(expr));
+      console.warn("rewriting ", JSON.stringify(expr));
       expr[2] = shape;
-      console.log("to ", JSON.stringify(expr));
+      console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -291,9 +291,9 @@ function rewriteExpressionWithType(type: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (type) {
-      console.log("rewriting ", JSON.stringify(expr));
+      console.warn("rewriting ", JSON.stringify(expr));
       expr[3] = type;
-      console.log("to ", JSON.stringify(expr));
+      console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -529,7 +529,7 @@ function createSemantics(grammar) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       ForExpression: function(_1, _2, initializers, condition, body) {
-        console.log('ForExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
+        console.warn('ForExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
         var retvals = [];
         var upvalNames = [];
         var bodyExprs = body.asJson.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, false));
