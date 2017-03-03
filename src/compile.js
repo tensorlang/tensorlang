@@ -70,7 +70,7 @@ class PackageParser {
           resolve(["_sf_python_package", pkgName, pkgSource.content]);
           return;
         case "nao":
-          this._doParsePackage(pkgName, pkgSource.language)
+          this._doParsePackage(pkgName, pkgSource.content)
           .then((pkgExpr: PackageExpression) => {
             this._doResolvePackageImports(pkgExpr)
             .then(() => resolve(pkgExpr), reject);
@@ -114,7 +114,7 @@ class PackageParser {
         }
 
         var imported = exprRest[0];
-        console.log('exprRest', JSON.stringify(imported));
+        console.warn('exprRest', JSON.stringify(imported));
 
         imported.forEach(
           ([importName, packagePath]) => {
@@ -133,12 +133,23 @@ class PackageParser {
 }
 
 module.exports = {
+  parseString: function(
+      packageName: string,
+      source: string,
+      resolveImport: ?PackageSourceResolver): Promise<expr> {
+    return new Promise((resolve, reject) => {
+      const pp = new PackageParser(resolveImport);
+      pp.parsePackageAndImports(packageName, source)
+      .then(resolve)
+      .catch(reject);
+    });
+  },
   compileString: function(
       packageName: string,
       source: string,
       resolveImport: ?PackageSourceResolver,
-      compileGraphTo: string,
-      compileGraphBinary: bool): Promise<string> {
+      compileGraphTo: ?string,
+      compileGraphBinary: ?bool): Promise<string> {
     return new Promise((resolve, reject) => {
       const pp = new PackageParser(resolveImport);
       pp.parsePackageAndImports(packageName, source)
@@ -162,9 +173,9 @@ module.exports = {
       packageName: string,
       source: string,
       resolveImport: ?PackageSourceResolver,
-      output: string,
-      binary: boolean,
-      compileGraphTo: string): Promise<any> {
+      output: ?string,
+      binary: ?boolean,
+      compileGraphTo: ?string): Promise<any> {
     return new Promise((resolve, reject) => {
       const pp = new PackageParser(resolveImport);
       pp.parsePackageAndImports(packageName, source)
