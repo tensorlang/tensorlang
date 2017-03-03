@@ -22,6 +22,8 @@ import graph_execution
 
 import tensorflow as tf
 
+import subprocess
+
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
@@ -33,9 +35,29 @@ def compile_meta_graph(input_json):
 
     return graph_gen.meta_graph_def_from_exprs(input_exprs)
 
+def parse_packages(root, package_names):
+  with subprocess.Popen(
+      ["node", "lib/cli.js", "--root", root, "--parse=-", *package_names],
+      stdout=subprocess.PIPE) as proc:
+    expr_text = proc.stdout.read().decode('utf-8')
+  return json.loads(expr_text)
+
+def parse_source(root, source):
+  with subprocess.Popen(
+      ["node", "lib/cli.js", "--root", root, "--source", source, "--parse=-"],
+      stdout=subprocess.PIPE) as proc:
+    expr_text = proc.stdout.read().decode('utf-8')
+  return json.loads(expr_text)
+
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument("metagraphdef", nargs='?', type=str,
+
+  parser.add_argument("--root", type=str, default=".",
+                      help="""Specify root directory to search for imports from""")
+  parser.add_argument("--source", type=str,
+                      help="""Specify source code instead of reading from file""")
+
+  parser.add_argument("--metagraphdef", nargs='?', type=str,
                       help="""Graph file to load.""")
   parser.add_argument("--binary-metagraphdef", nargs='?', type=bool, default=False,
                       help="""Whether or not input is binary.""")
@@ -66,6 +88,7 @@ def main():
 
   parser.add_argument("--input-json", nargs='?', type=str,
                       help="""JSON file to load.""")
+
   parser.add_argument("--output-binary", nargs='?', type=bool, default=False,
                       help="""Whether or not to output in binary.""")
   parser.add_argument("--output-metagraphdef", nargs='?', type=str,
@@ -73,7 +96,16 @@ def main():
   parser.add_argument("--output-graphdef", nargs='?', type=str,
                       help="""Path to write output in.""")
 
-  FLAGS, unparsed = parser.parse_known_args()
+  FLAGS, package_names = parser.parse_known_args(args=sys.argv[1:])
+
+  if FLAGS.test == None:
+    FLAGS.test = True
+
+  if FLAGS.run == None:
+    FLAGS.run = True
+
+  if FLAGS.repl == None:
+    FLAGS.repl = True
 
   meta_graph_def = None
 
@@ -82,6 +114,21 @@ def main():
 
   if FLAGS.input_json:
     meta_graph_def = compile_meta_graph(FLAGS.input_json)
+
+  if len(package_names) > 0 or FLAGS.source:
+    if FLAGS.source:
+      expressions = parse_source(FLAGS.root, FLAGS.source)
+    else:
+      expressions = parse_packages(FLAGS.root, package_names)
+
+    meta_graph_def = graph_gen.meta_graph_def_from_exprs(expressions)
+
+  if FLAGS.train:
+    graph_execution.import_and_run_meta_graph(
+      meta_graph_def=meta_graph_def,
+      feed_dict={},
+      result_pattern=re.compile(FLAGS.train_result_pattern),
+    )
 
   if FLAGS.output_metagraphdef:
     graph_io.write_meta_graph_def(
@@ -94,15 +141,6 @@ def main():
       graph_def=meta_graph_def.graph_def,
       file=FLAGS.output_graphdef,
       binary=FLAGS.output_binary)
-
-  if FLAGS.test == None:
-    FLAGS.test = True
-
-  if FLAGS.run == None:
-    FLAGS.run = True
-
-  if FLAGS.repl == None:
-    FLAGS.repl = True
 
   feed_dict = {}
   # Properly find and strip prefix of constants, loading them with given prefix to feed_dict

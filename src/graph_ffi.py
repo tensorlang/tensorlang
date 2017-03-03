@@ -31,8 +31,9 @@ class PythonImporter:
 
     # eprint('py_funcs._funcs', py_funcs._funcs)
     with py_funcs._lock:
-      if py_funcs._unique_id != 0:
-        raise Exception("py_funcs is not pristine. Aborting restore.")
+      if len(py_funcs._funcs) > 0:
+        raise Exception(
+            "py_funcs is not pristine (len(py_funcs._funcs) is %d). Aborting restore." % len(py_funcs._funcs))
 
       py_funcs._unique_id = unique_id
       py_funcs._funcs = self._restore_modules(modules)
