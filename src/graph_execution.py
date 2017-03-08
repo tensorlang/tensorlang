@@ -27,7 +27,7 @@ import inspect
 import datetime
 
 _summary_writer = None
-def run_session(sess, result_pattern, feed_dict):
+def run_session(sess, result_pattern, feed_dict, finish_session_fn=None):
   global _summary_writer
 
   # HACK(adamb) Should parameterize this
@@ -47,13 +47,16 @@ def run_session(sess, result_pattern, feed_dict):
   threads = tf.train.start_queue_runners(coord=coord)
 
   try:
-    result_names, ops = graph_query.find_results(sess.graph, result_pattern)
+    prefix, result_names, ops = graph_query.find_results(sess.graph, result_pattern)
     result_tensors = sess.run(
       fetches=ops,
       feed_dict=feed_dict,
       options=run_options,
       run_metadata=run_metadata,
     )
+
+    if finish_session_fn:
+      finish_session_fn(sess, prefix)
 
     return dict(zip(result_names, result_tensors))
   finally:
@@ -65,11 +68,12 @@ def run_session(sess, result_pattern, feed_dict):
 
     coord.request_stop()
     coord.join(threads)
+    _summary_writer = None
 
 import graph_ffi
 from tensorflow.python.ops import script_ops
 
-def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict):
+def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict, finish_session_fn=None):
   with create_session() as sess:
     meta_graph.import_scoped_meta_graph(
       meta_graph_def,
@@ -90,7 +94,10 @@ def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict):
       py_importer = graph_ffi.PythonImporter()
       py_importer.restore_py_funcs(script_ops._py_funcs, py_func_data)
 
-    return run_session(sess, result_pattern, feed_dict)
+    try:
+      return run_session(sess, result_pattern, feed_dict, finish_session_fn=finish_session_fn)
+    finally:
+      sess.close()
 
 
 def run_imported_graph(graph_def, result_pattern, feed_dict):
@@ -100,4 +107,7 @@ def run_imported_graph(graph_def, result_pattern, feed_dict):
       name=""
     )
 
-    return run_session(sess, result_pattern, feed_dict)
+    try:
+      return run_session(sess, result_pattern, feed_dict)
+    finally:
+      sess.close()

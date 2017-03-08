@@ -14,11 +14,13 @@ from tensorflow.python.framework import tensor_util
 from tensorflow.python.util import compat
 
 from tensorflow.core.framework import graph_pb2
+from tensorflow.core.framework import variable_pb2
 from tensorflow.core.protobuf import control_flow_pb2
 
+import graph_context
 import graph_ffi
 import graph_function
-import graph_context
+import graph_io
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -117,7 +119,7 @@ class Nao:
 
   def enqueue_many(self, ctx, queue_ref, components, name=None):
     if name is None:
-      name = tf.get_default_graph().unique_name("EnqueueMany").split("/")[-1]
+      name = tf.get_default_graph().unique_name("EnqueueMany", False).split("/")[-1]
 
     ret = gen_data_flow_ops._queue_enqueue_many_v2(
         queue_ref, components=components, name=name)
@@ -133,7 +135,7 @@ class Nao:
 
   def dequeue_many(self, ctx, queue_ref, n, component_types=None, name=None):
     if name is None:
-      name = tf.get_default_graph().unique_name("DequeueMany").split("/")[-1]
+      name = tf.get_default_graph().unique_name("DequeueMany", False).split("/")[-1]
 
     ret = gen_data_flow_ops._queue_dequeue_many_v2(
         queue_ref, n=n, component_types=component_types, name=name)
@@ -149,7 +151,7 @@ class Nao:
 
   def dequeue(self, ctx, queue_ref, component_types=None, name=None):
     if name is None:
-      name = tf.get_default_graph().unique_name("Dequeue").split("/")[-1]
+      name = tf.get_default_graph().unique_name("Dequeue", False).split("/")[-1]
 
     ret = gen_data_flow_ops._queue_dequeue_v2(
         queue_ref, component_types=component_types, name=name)
@@ -285,7 +287,7 @@ class TopLevel:
     scope_name = name
     if scope_name == None and hasattr(fn, '_name'):
       g = tf.get_default_graph()
-      scope_name = g.unique_name(fn._name() or 'fnc').split("/")[-1]
+      scope_name = g.unique_name(fn._name() or 'fnc', False).split("/")[-1]
 
     if not hasattr(fn, 'apply') and hasattr(fn, 'apply_attrs'):
       fn = fn.apply_attrs(self, attrs)
@@ -608,6 +610,10 @@ class TopLevel:
 
     eprint("tf.while_loop(cond=%s, body=%s, loop_vars=%s)" % (cond, body, loop_vars))
 
+    # If we're referencing variables, we need to alert listeners.
+    for v in loop_vars:
+      self._visit_result(v)
+
     results = None
     try:
       results = tf.while_loop(
@@ -704,6 +710,15 @@ class TopLevel:
 
   def _sf_graph(self, ctx, name, *exprs):
     with tf.variable_scope(name):
+    with tf.variable_scope(name) as var_scope:
+      g = tf.get_default_graph()
+      var_collection_name = "%s:variable_names" % (var_scope.name)
+      var_set = set()
+      def on_var(var):
+        if name.startswith("train"):
+          var_set.add(var.name)
+      self.add_variable_listener(on_var)
+
       retval_names = []
       ctx2 = ctx.subcontext()
 
@@ -713,6 +728,11 @@ class TopLevel:
       for retval_name in retval_names:
         op = ctx2.get_local(retval_name)
         tf.identity(op, name=retval_name)
+
+      for var_name in var_set:
+        g.add_to_collection(var_collection_name, var_name)
+
+      self.remove_variable_listener(on_var)
 
   def assert_type(self, ctx, dtype, val):
     # TODO(adamb) Actually check type
@@ -731,11 +751,33 @@ class TopLevel:
 
     return ctx.get_index(target, index)
 
-  def _sf_function(self, ctx, name, *rest):
-    return graph_function.DeclaredFunction(ctx.subcontext(), [name, *rest])
+  def _sf_function(self, ctx, name, attr_spec_exprs, arg_spec_exprs, retval_specs, *body_expr):
+    attr_specs = attr_spec_exprs and [self._visit(ctx, expr) for expr in attr_spec_exprs]
+    arg_specs = [(name, self._visit(ctx, shape), self._visit(ctx, type)) for (name, shape, type) in arg_spec_exprs]
+
+    fn = graph_function.DeclaredFunction(ctx.subcontext(), [name, attr_specs, arg_specs, retval_specs, *body_expr])
+
+    return fn
 
   def _sf_macro(self, ctx, name, *rest):
     return graph_function.DeclaredMacro(ctx.subcontext(), [name, *rest])
+
+  def _sf_foreign_package(self, ctx, type, name, scope, source):
+    eprint("_sf_foreign_package", name, scope)
+    if type == "python":
+      return self._sf_python_package(ctx, name, source)
+
+    if type == "tensorflow:metagraph:pbtxt":
+      return self._sf_tf_metagraph_package(ctx, name, scope, source, binary=False)
+
+    raise Exception("Unknown package type %s" % type)
+
+  def _sf_tf_metagraph_package(self, ctx, name, scope, source, binary):
+    # TODO(adamb) how do we handle the fact that there may be multiple packages
+    #     within the given file. Should we only parse out the one we want?
+    meta_graph_def = graph_io.parse_meta_graph_def(source, binary)
+    pkg = graph_function.MetaGraphDefPackage(meta_graph_def, name, scope)
+    ctx.define_fully_qualified_package(name, pkg)
 
   def _sf_python_package(self, ctx, name, source):
     outer_module = imp.new_module("%s$wrapper" % name)
@@ -748,15 +790,14 @@ class TopLevel:
     ctx.define_fully_qualified_package(name, pkg)
     return pkg
 
-  def _sf_import(self, ctx, name_pairs):
+  def _sf_import(self, ctx, name_triples):
     # HACK(adamb) At the moment, assume that we're only talking about python)
-    for name, package_path in name_pairs:
+    for name, package_path, scope in name_triples:
       pkg = None
-      if package_path.startswith("tensorflow:"):
+      if package_path == "tensorflow":
         py_module = tf
-        suffix = package_path.split(":", 2)[1]
-        if suffix:
-          parts = suffix.split("/")
+        if scope:
+          parts = scope.split("/")
           py_module = reduce(lambda p, n: getattr(p, n), parts, py_module)
         pkg = graph_function.PythonPackage(py_module)
       else:
@@ -765,21 +806,87 @@ class TopLevel:
 
       ctx.import_package(name, pkg)
 
+  # HACK(adamb) For now we manually export declared functions with initial capital letters.
+  #     When functions are emitted as FunctionDefs, this can be removed.
+  def _maybe_export_function(self, package_name, subctx, name, value):
+    if not name[0].isupper():
+      return
+
+    value = self.__unwrap_bag(value)
+
+    if not isinstance(value, graph_function.DeclaredFunction):
+      eprint("isn't a declared function", type(value))
+      return
+
+    fn = value
+
+    # HACK(adamb) We want to nest the function under "_".
+    fn = fn.clone()
+    fn.rename("_")
+
+    g = tf.get_default_graph()
+    var_collection_name = "%s:variable_names" % (g.unique_name(name, False))
+    var_set = set()
+    def on_var(var):
+      var_set.add(var.name)
+    self.add_variable_listener(on_var)
+
+    with tf.variable_scope(name):
+      with tf.variable_scope("inputs"):
+        args = [tf.placeholder(arg_dtype, arg_shape, arg_name) for (arg_name, arg_shape, arg_dtype) in fn._arg_specs()]
+
+      subctx2 = subctx.subcontext()
+      fn.apply(self, subctx2, None, None, args)
+
+      with tf.variable_scope("outputs"):
+        g = tf.get_default_graph()
+        for (retval_name, retval_inner_name) in fn._retval_specs():
+          tensor_prefix = "%s/%s" % (package_name, name)
+          try:
+            returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
+          except KeyError:
+            # If we fail to find the tensor above, perhaps it was just an input.
+            returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
+
+          tf.identity(returned_tensor, name=retval_name)
+
+    for var_name in var_set:
+      g.add_to_collection(var_collection_name, var_name)
+
+    self.remove_variable_listener(on_var)
+
   def _sf_package(self, ctx, name, *exprs):
     pkg = ctx.resolve_fully_qualified_package(name)
 
     subctx = pkg.ctx()
+    prev_local_items = subctx.local_items()
+    prev_attr_items = subctx.attr_items()
+
     with tf.variable_scope(name):
       self._visit_exprs(subctx, exprs)
+
+      for local_name, local_value in subctx.local_items():
+        if (local_name, local_value) in prev_local_items:
+          continue
+
+        self._maybe_export_function(name, subctx, local_name, local_value)
+
+      for attr_name, attr_value in subctx.attr_items():
+        if (attr_name, attr_value) in prev_attr_items:
+          continue
+
+        self._maybe_export_function(name, subctx, attr_name, attr_value)
 
       return pkg
 
   def visit(self, ctx, expr):
-    result = self._visit(ctx, expr)
+    return self._visit_result(self._visit(ctx, expr))
 
+  def _visit_result(self, result):
     # TODO(adamb) What about retval bags that contain variables?
-    if isinstance(result, tf.Variable) or (isinstance(result, tf.Tensor) and result.dtype._is_ref_dtype):
-      eprint("saw variable", result)
+    is_tensor_ref = isinstance(result, tf.Tensor) and result.dtype._is_ref_dtype
+    is_variable = isinstance(result, tf.Variable)
+    if is_variable or is_tensor_ref:
       for listener in self._variable_listeners:
         listener(result)
 

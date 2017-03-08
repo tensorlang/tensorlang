@@ -102,6 +102,7 @@ function maybeRun() {
 
 if (input || flags.source) {
   var source;
+  var pkgName: string;
   var pkgRootDir = flags.root || process.cwd();
   var parseTo = flags.parse;
   var compileTo = flags.compile;
@@ -114,17 +115,19 @@ if (input || flags.source) {
       console.warn("Can't provide a package name and --source option.")
       process.exit(1);
     }
+    pkgName = "main";
   } else {
-    var splitInput = input.split(".", 2);
-    var basename = splitInput[0];
-    var graphName = splitInput[1] || 'main';
+    pkgName = input;
+
+    var basename = input;
     var filename = path.join(pkgRootDir, `${basename}${suffix}`);
 
     // TODO(adamb) Don't do this synchronously
     source = fs.readFileSync(filename).toString();
   }
 
-  function resolvePackage(name: string): Promise<any> {
+  function resolvePackage(importPath: string): Promise<any> {
+    var [name, scope] = importPath.split(":", 2);
     type PackageAttempt = {suffix: string, language: string}
     var trySuffixes: PackageAttempt[] = [
       {
@@ -134,6 +137,10 @@ if (input || flags.source) {
       {
         suffix: ".py",
         language: "python"
+      },
+      {
+        suffix: ".meta",
+        language: "tensorflow:metagraph:pbtxt"
       }
     ];
 
@@ -149,7 +156,7 @@ if (input || flags.source) {
                     rj(err);
                     return;
                   }
-                  rs({language: attempt.language, content: data});
+                  rs({language: attempt.language, name: name, scope: scope, content: data});
                 });
           });
         })
@@ -160,7 +167,7 @@ if (input || flags.source) {
   }
 
   if (parseTo) {
-    var parse = compile.parseString("main", source, resolvePackage)
+    var parse = compile.parseString(pkgName, source, resolvePackage)
       .then((expr) => {
         // HACK(adamb) This is just temporary until python owns the CLI.
         if (parseTo === "-") {

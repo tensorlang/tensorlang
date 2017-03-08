@@ -1,0 +1,72 @@
+import (
+  summaryWriter "summary_writer"
+  mnistFormat   "mnist_data"
+
+  lenet_trained "lenet_trained:lenet"
+  summary       "tensorflow:summary"
+)
+
+graph testClassify {
+  let imagesFile = "../MNIST_data/t10k-images-idx3-ubyte.gz"
+  let labelsFile = "../MNIST_data/t10k-labels-idx1-ubyte.gz"
+
+  // Load images file
+  mnistFormat.ReadImages(imagesFile) -- allImages
+  mnistFormat.ReadLabels(labelsFile) -- allLabels
+
+  // Make new queue, add mnist data to it.
+  let q = tf.RandomShuffleQueue[
+    capacity: 60000,
+    min_after_dequeue: 0,
+    dtypes: {tf.float64, tf.float32},
+    shapes: {<10>, <784>},
+  ]()
+
+  let qRef = q:queue_ref
+  nao.enqueue_many(qRef, {allLabels, allImages})
+
+  let batchSize = 100
+
+  let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
+  let labels = v:0
+  tf.reshape(v:1, [-1, 28, 28, 1]) -- images
+
+  // TODO(adamb) Implement enough support for the below to work!!!!
+  lenet_trained.LeNet(^) -- prediction
+  tf.argmax(^, 1)
+  tf.to_int32(^)
+  tf.dynamic_partition[
+    num_partitions: 10,
+  ](images, ^) -- partitionedImages
+
+  let step = 12
+
+  tf.argmax(prediction, 1) == tf.argmax(labels, 1) -- correct_prediction
+  tf.reduce_mean(tf.cast(^, tf.float32)) -- x
+  summary.scalar(^) -- accuracy
+  summaryWriter.AddWithStep(^, step)
+  summaryWriter.Debug(x)
+
+  summary.image(partitionedImages:0) -- image0s
+  summaryWriter.AddWithStep(image0s, step)
+  summary.image(partitionedImages:1) -- image1s
+  summaryWriter.AddWithStep(image1s, step)
+  summary.image(partitionedImages:2) -- image2s
+  summaryWriter.AddWithStep(image2s, step)
+  summary.image(partitionedImages:3) -- image3s
+  summaryWriter.AddWithStep(image3s, step)
+  summary.image(partitionedImages:4) -- image4s
+  summaryWriter.AddWithStep(image4s, step)
+  summary.image(partitionedImages:5) -- image5s
+  summaryWriter.AddWithStep(image5s, step)
+  summary.image(partitionedImages:6) -- image6s
+  summaryWriter.AddWithStep(image6s, step)
+  summary.image(partitionedImages:7) -- image7s
+  summaryWriter.AddWithStep(image7s, step)
+  summary.image(partitionedImages:8) -- image8s
+  summaryWriter.AddWithStep(image8s, step)
+  summary.image(partitionedImages:9) -- image9s
+  summaryWriter.AddWithStep(image9s, step)
+
+  ← result = after __leaves { 1 }
+}

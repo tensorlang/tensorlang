@@ -6,11 +6,11 @@ const spawnProcess = require('./util/spawnProcess.js');
 
 
 type expr = any[];
-type PackageName = string;
-type PackageSource = {language: string, content: string};
 type PackageExpression = any[];
 type PalletExpression = PackageExpression[];
-type PackageSourceResolver = (PackageName) => Promise<PackageSource>;
+export type PackageName = string;
+export type PackageSource = {language: string, name: string, scope: string, content: string};
+export type PackageSourceResolver = (PackageName) => Promise<PackageSource>;
 
 class PackageParser {
   _resolutions: {[pkgName: PackageName]: Promise<PackageExpression>};
@@ -65,21 +65,16 @@ class PackageParser {
     return new Promise((resolve, reject) => {
       this._sourceResolver(pkgName)
       .then((pkgSource: PackageSource) => {
-        switch (pkgSource.language) {
-        case "python":
-          resolve(["_sf_python_package", pkgName, pkgSource.content]);
-          return;
-        case "nao":
+        if (pkgSource.language === "nao") {
           this._doParsePackage(pkgName, pkgSource.content)
           .then((pkgExpr: PackageExpression) => {
             this._doResolvePackageImports(pkgExpr)
             .then(() => resolve(pkgExpr), reject);
           }, reject);
           return;
-        default:
-          reject(new Error(`Unknown language for package ${pkgName}: ${pkgSource.language}`));
-          return;
         }
+
+        resolve(["_sf_foreign_package", pkgSource.language, pkgSource.name, pkgSource.scope, pkgSource.content]);
       }, reject);
     });
   }
@@ -114,15 +109,16 @@ class PackageParser {
         }
 
         var imported = exprRest[0];
-        console.warn('exprRest', JSON.stringify(imported));
+        // console.warn('exprRest', JSON.stringify(imported));
 
         imported.forEach(
-          ([importName, packagePath]) => {
+          ([importName, packagePath, scopeName]) => {
             // Skip imports that provide direct access to TensorFlow internals.
-            if (packagePath.startsWith("tensorflow:")) {
+            if (packagePath === "tensorflow") {
               return;
             }
-            importedPackageNames.push(packagePath);
+            var joined = [packagePath, ...(scopeName ? [scopeName] : [])].join(":");
+            importedPackageNames.push(joined);
           }
         );
       }

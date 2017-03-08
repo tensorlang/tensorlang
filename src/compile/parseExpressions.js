@@ -363,14 +363,13 @@ function createSemantics(grammar) {
         return specs.asJson;
       },
       ImportSpec: function(packageName, importPath, _) {
-        var path = importPath.asJson;
+        var [path, scope] = importPath.asJson.split(":", 2);
         var name = packageName.asJson[0];
-
-        var pathFragments = path.split("/");
         if (!name) {
+          var pathFragments = (scope || path).split("/");
           name = pathFragments[pathFragments.length - 1];
         }
-        return [name, path];
+        return [name, path, scope];
       },
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },

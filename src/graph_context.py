@@ -14,6 +14,12 @@ class SentinelContextDelegate:
   def __init__(self):
     self._delegate = None
 
+  def local_items(self):
+    return []
+
+  def attr_items(self):
+    return []
+
   def call(self, fn, args, kwargs):
     try:
       return fn(*args, **kwargs)
@@ -188,6 +194,16 @@ class Context:
 
   def subcontext(self):
     return Context(self)
+
+  def local_items(self):
+    l = self._delegate.local_items()
+    l.extend(self._locals.items())
+    return l
+
+  def attr_items(self):
+    l = self._delegate.attr_items()
+    l.extend(self._attrs.items())
+    return l
 
   def resolve_fully_qualified_package(self, name):
     if name in self._fully_qualified_packages:

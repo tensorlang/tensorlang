@@ -27,19 +27,21 @@ def write_graph_def(graph_def, file, binary):
       data = text_format.MessageToString(graph_def)
       f.write(data)
 
+def parse_meta_graph_def(data, binary):
+  meta_graph_def = meta_graph_pb2.MetaGraphDef()
+  if binary:
+    meta_graph_def.ParseFromString(data)
+  else:
+    text_format.Merge(data, meta_graph_def)
+  return meta_graph_def
+
 def read_meta_graph_def(path, binary):
   mode = "r"
   if binary:
     mode += "b"
 
-  meta_graph_def = meta_graph_pb2.MetaGraphDef()
   with open(path, mode) as f:
-    if binary:
-      meta_graph_def.ParseFromString(f.read())
-    else:
-      text_format.Merge(f.read(), meta_graph_def)
-
-  return meta_graph_def
+    return parse_meta_graph_def(f.read(), binary)
 
 def write_meta_graph_def(meta_graph_def, file, binary):
   if binary:
