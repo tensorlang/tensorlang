@@ -1,6 +1,7 @@
 import (
   summaryWriter "summary_writer"
   mnistFormat   "mnist_data"
+  lenet         "lenet"
 
   tf            "tensorflow:"
   nn            "tensorflow:nn"
@@ -8,58 +9,7 @@ import (
   train         "tensorflow:train"
 )
 
-func convLayer(input, weights, biases) {
-  input
-  nn.conv2d[
-    strides: [1, 1, 1, 1],
-    padding: "SAME",
-  ](^, weights)
-  nn.bias_add(^, biases)
-  nn.relu(^)
-  nn.max_pool[
-    ksize: [1, 2, 2, 1],
-    strides: [1, 2, 2, 1],
-    padding: "SAME",
-  ](^)
-  emit s = ^
-}
-
-func fullyConnected(input, weights, biases) {
-  // Fully connected layer. Note that the '+' operation automatically
-  // broadcasts the biases.
-  input
-  tf.matmul(^, weights)
-  ^ + biases
-  emit s = ^
-}
-
-func makeLeNet[] {
-  // 5x5 filter, depth 32. Could also specify attr "seed"
-  var conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
-  var conv1_biases float <32> = 0
-  var conv2_weights float <5, 5, 32, 64> = tf.truncated_normal[shape: <5, 5, 32, 64>, stddev: 0.1]()
-  var conv2_biases float <64> = 0.1
-  // Fully connected, depth 512
-  // IMAGE_SIZE // 4 * IMAGE_SIZE // 4 * 64
-  var fc1_weights float <3136, 512> = tf.truncated_normal[shape: <3136, 512>, stddev: 0.1]()
-  var fc1_biases float <512> = 0.1
-  var fc2_weights float <512, 10> = tf.truncated_normal[shape: <512, 10>, stddev: 0.1]()
-  var fc2_biases float <10> = 0.1
-
-  let a = func (image float) {
-    image
-    convLayer(^, conv1_weights, conv1_biases)
-    convLayer(^, conv2_weights, conv2_biases)
-    tf.reshape(^, {-1, 3136})
-
-    fullyConnected(^, fc1_weights, fc1_biases)
-    fullyConnected(^, fc2_weights, fc2_biases) -- r
-    <- r = r
-  }
-  emit apply = a
-}
-
-func train[fn, learningRate] {
+func trainNn[fn, learningRate] {
   nao.var_transform[
     fn: func(data float, label double <?,10>, step int32) {
       fn(data) -- prediction
@@ -84,9 +34,7 @@ func train[fn, learningRate] {
   emit e = ^
 }
 
-let LeNet = makeLeNet[]
-
-graph train {
+func Train() {
   let imagesFile = "../MNIST_data/train-images-idx3-ubyte.gz"
   let labelsFile = "../MNIST_data/train-labels-idx1-ubyte.gz"
 
@@ -105,7 +53,7 @@ graph train {
   let qRef = q:queue_ref
   nao.enqueue_many(qRef, {allLabels, allImages})
 
-  let trainStep = train[fn: LeNet, learningRate: 0.01]
+  let trainStep = trainNn[fn: lenet.LeNet, learningRate: 0.01]
 
   let maxSteps = 400
   let f = for let step int32 <> = 0; step < maxSteps {

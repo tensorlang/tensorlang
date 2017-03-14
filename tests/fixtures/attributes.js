@@ -9,7 +9,7 @@ module.exports = [
       <- result = a + b
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0] -- foo
       foo[b: 2.0]  -- bar
       <- result = bar()
@@ -25,7 +25,7 @@ module.exports = [
       <- result = a + b
     }
 
-    graph main {
+    func Main() {
       <- result = lotsOfAttributes[a: 1.0, b: 2.0, ...]()
     }
 `,
@@ -39,7 +39,7 @@ module.exports = [
       <- result = a + b + c
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0, b: 2.0, ...] -- foo
       foo[b: 3.0, c: 4.0] -- bar
 
@@ -53,7 +53,7 @@ module.exports = [
       <- result = a + b + c
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0, b: 2.0, ...] -- foo
       foo[c: 3.0]  -- bar
 
@@ -71,7 +71,7 @@ module.exports = [
       <- result = a + b + c
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0, b: 2.0, ...] -- foo
       tf.Assert(6.0 == foo[c: 3.0, ...](), {"Assertion failed!"})
 
@@ -87,7 +87,7 @@ module.exports = [
       <- result = c / b - a
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0, b: 2.0, c: 4.0] -- foo
       tf.Assert(1.0 == ^](), {"Assertion failed!"})
 
@@ -103,7 +103,7 @@ module.exports = [
       <- result = c / b - a
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfAttributes[a: 1.0, b: 2.0, c: 4.0, b: 2.0] -- foo
       tf.Assert(1.0 == ^](), {"Assertion failed!"})
 

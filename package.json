@@ -1,37 +1,28 @@
 {
   "devDependencies": {
-    "add": "^2.0.6",
-    "babel-cli": "^6.18.0",
-    "babel-plugin-transform-flow-strip-types": "^6.21.0",
-    "browserify": "^13.3.0",
+    "browserify": "^14.1.0",
+    "exposify": "^0.5.0",
     "faucet": "^0.0.1",
     "flow": "^0.2.3",
     "flow-bin": "^0.37.4",
     "flow-typed": "^2.0.0",
-    "meow": "^3.7.0",
-    "nexe": "https://github.com/nexe/nexe.git",
     "source-map-support": "^0.4.8",
+    "stringify": "^5.1.0",
     "tape": "^4.6.3",
-    "tape-catch": "^1.0.6"
+    "tape-catch": "^1.0.6",
+    "unflowify": "^1.0.1"
   },
   "dependencies": {
     "minimist": "^1.2.0",
-    "ohm-js": "^0.12.3"
+    "ohm-js": "^0.13.1"
   },
   "scripts": {
-    "nao": "node lib/cli.js",
-    "one": "mkdir -p dist/ && nexe -i $PWD/lib/cli.js -p $(which python2.7) -o $PWD/dist/nao^\\$",
-    "watch": "babel --watch=src --out-dir=./lib --copy-files --source-maps inline"
+    "build": "browserify -t unflowify -t [ stringify --extensions [.ohm] ] src/parse.js --standalone parse > lib/parse.js"
   },
   "bin": {
     "nao": "lib/cli.js"
   },
   "files": [
     "lib"
-  ],
-  "babel": {
-    "plugins": [
-      "transform-flow-strip-types"
-    ]
-  }
+  ]
 }

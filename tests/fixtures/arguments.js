@@ -8,7 +8,7 @@ module.exports = [
       <- result = a / b - c
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfArgs(a: 4.0, c: 1.0, b: 2.0)
       tf.Assert(1.0 == ^, {"Assertion failed!"})
 
@@ -24,7 +24,7 @@ module.exports = [
       <- result = a / b - c
     }
 
-    graph testAttributes {
+    func TestAttributes() {
       lotsOfArgs(a: 4.0, c: 1.0, b: 2.0, c: 1.0)
       tf.Assert(1.0 == ^, {"Assertion failed!"})
 

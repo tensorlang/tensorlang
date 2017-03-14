@@ -2,34 +2,7 @@
 'use strict';
 
 var test = require('tape');
-var compileString = require('../src/compile').compileString;
-var runString = require('../src/run').fromString;
-var testString = require('../src/test').fromString;
-
-function compileAndRun(source: string): Promise<string> {
-  return new Promise(
-    (resolve, reject) => {
-      compileString("main", source, null)
-      .then((compiled) => {
-        runString(compiled, false)
-        .then(resolve, reject)
-      }, reject);
-    }
-  );
-}
-
-function compileAndTest(source: string): Promise<string> {
-  return new Promise(
-    (resolve, reject) => {
-      compileString("main", source, null)
-      .then(
-          (compiled) => {
-            testString(compiled, false)
-            .then(resolve, reject)
-          }, reject)
-    }
-  );
-}
+var spawnProcess = require('./util/spawnProcess');
 
 var testCases = [
   ...require('./fixtures/simple'),
@@ -46,13 +19,14 @@ testCases.forEach(
 
       var action = tc.action || "run";
       var shouldFail = tc.fails || false;
+      var additionalArgs = [];
       var promise;
       switch (action) {
       case "test":
-        promise = compileAndTest(tc.source);
+        additionalArgs.push("--test");
         break;
       case "run":
-        promise = compileAndRun(tc.source);
+        additionalArgs.push("--run");
         break;
       default:
         t.error(`Unknown action: ${action}`);
@@ -80,7 +54,14 @@ testCases.forEach(
         }
       }
 
-      promise
+      spawnProcess.withStdinCapturingStdout(
+        `${__dirname}/../bin/nao`,
+        [
+          "--source", tc.source,
+          ...additionalArgs,
+        ],
+        ""
+      )
       .then(
         (str) => {
           checkText(str);

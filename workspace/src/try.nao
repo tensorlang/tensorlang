@@ -6,7 +6,7 @@ import (
   summary       "tensorflow:summary"
 )
 
-graph testClassify {
+func TestClassify() {
   let imagesFile = "../MNIST_data/t10k-images-idx3-ubyte.gz"
   let labelsFile = "../MNIST_data/t10k-labels-idx1-ubyte.gz"
 

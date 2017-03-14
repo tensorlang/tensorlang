@@ -7,7 +7,7 @@ module.exports = [
     action: "test",
     source: `
 var j int32 <> = 0
-graph testLoop {
+func TestLoop() {
   // j = j + 2
   let out = for let x = 1; x <= 5 {
     j = j + 1
@@ -39,7 +39,7 @@ func sum(b, w) {
 }
 
 var conv1_weights float <5, 5, 1, 32> = tf.truncated_normal[shape: <5, 5, 1, 32>, stddev: 0.1]()
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1; x <= 5 {
     sum(tf.truncated_normal[shape: <1, 28, 28, 1>, stddev: 0.1](), conv1_weights)
 
@@ -67,7 +67,7 @@ func sum(b) {
   emit s = ^
 }
 
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1; x <= 5 {
     sum(tf.truncated_normal[shape: <1, 28, 28, 1>, stddev: 0.1]())
 
@@ -88,7 +88,7 @@ func sum(a, b) {
   emit s = a + b
 }
 
-graph testLoop {
+func TestLoop() {
   var a int32<> = 1
   let out = for let x = 1; x <= 5 {
     a + 5
@@ -106,7 +106,7 @@ graph testLoop {
     name: "simple loop",
     action: "test",
     source: `
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1; x <= 5 {
     <- x = x + 1
   }
@@ -125,7 +125,7 @@ func isFiveOrLess(a) {
   emit s = a <= 5
 }
 
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1; isFiveOrLess(x) {
     <- x = x + 1
   }
@@ -144,7 +144,7 @@ func sum(a, b) {
   emit s = a + b
 }
 
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1; x <= 5 {
     <- x = sum(x, 1)
   }
@@ -163,7 +163,7 @@ func sum(a, b) {
   emit s = a + b
 }
 
-graph testLoop {
+func TestLoop() {
   var a int32<> = 1
   let out = for let x = 1; x <= 5 {
     <- x = sum(x, a)
@@ -179,7 +179,7 @@ graph testLoop {
     name: "loop using a variable inside the loop as an arg to a function",
     action: "test",
     source: `
-graph testLoop {
+func TestLoop() {
   let out = for let x = 1.0; let y float <700> = 0; x <= 5.0 {
     var q float<700> = tf.truncated_normal[shape: <700>]()
     func () {

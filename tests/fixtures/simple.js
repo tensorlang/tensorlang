@@ -7,7 +7,7 @@ const toExport: any = [
   {
     name: "basic graph",
     source: `// comment before
-graph main /* comment within */ {
+func Main() /* comment within */ {
   // comment within
   <- one = 1.0
   /* another one */
@@ -36,7 +36,7 @@ graph main /* comment within */ {
   }
 }
 versions {
-  producer: 17
+  producer: 21
 }
 `
   },

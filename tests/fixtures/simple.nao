@@ -2,7 +2,7 @@ func identityBool(z) {
   ← z
 }
 
-graph testIdentityBool {
+func TestIdentityBool() {
   let x = true
   tf.Assert(identityBool(x), {""})
 
@@ -15,7 +15,7 @@ func doubleSum(a, b) {
   <- c = a + b * 2.0 + a
 }
 
-graph testSum {
+func TestSum() {
   let x = 1.0
   let y = 3.0
   tf.Assert(8.0 == doubleSum(x, y), {""})
@@ -25,7 +25,7 @@ graph testSum {
 
 // split
 
-graph testComparisons {
+func TestComparisons() {
   tf.Assert(0 == 1 - 1 + 1 - 1 + 1 - 1, {"0 == 1 - 1 + 1 - 1 + 1 - 1"})
   tf.Assert(1 < 2, {"1 < 2"})
   tf.Assert(1 <= 2, {"1 <= 2"})
@@ -52,7 +52,7 @@ func bifurcate(x) {
   <- out2 = x + 0.0
 }
 
-graph testBifurcate {
+func TestBifurcate() {
   bifurcate(1.0) -- b
   tf.Assert(1.0 == b:out1, {"1.0 == b:out1"})
   tf.Assert(b:out2 == b:out1, {"b:out2 == b:out1"})
@@ -70,7 +70,7 @@ func max(a, b) {
   }
 }
 
-graph testMax {
+func TestMax() {
   tf.Assert(1.0 == max(0.1, 1.0), {"1.0 == max(0.1, 1.0)"})
   tf.Assert(1.0 == max(1.0, 0.1), {"1.0 == max(1.0, 0.1)"})
 
@@ -83,7 +83,7 @@ func attrOutput[c]() {
   <- c
 }
 
-graph testAttrOutput {
+func TestAttrOutput() {
   tf.Assert(1 == attrOutput[c: 1](), {""})
 
   after __leaves { ← result = 0 }
@@ -95,7 +95,7 @@ func applyFnToSum[f, a](b) {
   <- result = f(a + b)
 }
 
-graph testFnAttr {
+func TestFnAttr() {
   1.0 -- one
   2.0 -- two
   3.0 -- three
@@ -133,7 +133,7 @@ func incrementDoubler(a) {
   <- result = ^
 }
 
-graph testArrows {
+func TestArrows() {
   1.0 -> increment(.) -> doubler(.) -- r0
   tf.Assert(4.0 == r0, {"Problem with pipe arrow and dot"})
 
@@ -163,7 +163,7 @@ graph testArrows {
 
 // split
 
-graph testLoop {
+func TestLoop() {
   for let x = 1; x <= 5 {
     <- x = x + 1
   } -- out

@@ -11,7 +11,6 @@ NaoRules {
 
 	TopLevelDecl = nl*
 		( FunctionDeclaration
-		| GraphDefinition
 		| LetAssignment
 		| VariableDeclaration
     | VariableUpdate
@@ -37,8 +36,6 @@ NaoRules {
 	    | Expression
 	    ) #sc
 
-	GraphDefinition = #(graph ws+ identifier) "{" GraphBody nl* "}" nl*
-	GraphBody = GraphElement*
 	GraphElement = nl*
 	    ( InputDeclaration
 	    | VariableDeclaration
@@ -267,7 +264,6 @@ NaoRules {
 	const = "const" ~identifierPart
 
 	after = "after" ~identifierPart
-	graph = "graph" ~identifierPart
 	func = "func" ~identifierPart
 	var = "var" ~identifierPart
 	equal = "=" ~identifierPart

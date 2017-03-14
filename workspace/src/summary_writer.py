@@ -1,5 +1,7 @@
 from tensorflow.python.framework import dtypes
 
+import sys
+
 import graph_execution
 
 def eprint(*args, **kwargs):
@@ -11,4 +13,8 @@ def AddWithStep(summary_protobuf, global_step) -> dtypes.int64:
 
 def Add(summary_protobuf) -> dtypes.int64:
   graph_execution._summary_writer.add_summary(summary_protobuf)
+  return 0
+
+def Debug(x) -> dtypes.int64:
+  eprint("Debug %s" % x)
   return 0

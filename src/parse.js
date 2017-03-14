@@ -1,9 +1,8 @@
 /* @flow */
 
 const ohm = require('ohm-js');
-const fs = require('fs');
+const grammarText = require('./nao.ohm');
 
-const grammarText = fs.readFileSync(`${__dirname}/nao.ohm`);
 
 function loadGrammar() {
   return ohm.grammar(grammarText);
@@ -54,7 +53,6 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
 
 function processFunctionBodyExpr(upvalNames: string[], retvals: any[], isMacro: bool, expr) {
   if (expr[0] === "__retval") {
-    console.warn('processFunctionBodyExpr', JSON.stringify(expr));
     var [_, retName, retVal: any[]] = expr;
     var subName = expressionName(retVal);
     if (!subName) {
@@ -241,9 +239,7 @@ function rewriteExpressionWithShape(shape: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (shape) {
-      console.warn("rewriting ", JSON.stringify(expr));
       expr[2] = shape;
-      console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -291,9 +287,7 @@ function rewriteExpressionWithType(type: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (type) {
-      console.warn("rewriting ", JSON.stringify(expr));
       expr[3] = type;
-      console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -476,16 +470,6 @@ function createSemantics(grammar) {
       FunctionElement: function(_1, decl, _2) {
         return decl.asJson;
       },
-      GraphDefinition: function(_1, _2, name, _3, body, _4, _5, _6) {
-        var emitted = 0;
-        body.asJson.forEach(function(expr, ix, exprs) {
-          if (expr[0] === "__retval" && !expr[1]) {
-            expr[1] = "" + emitted++;
-          }
-        });
-
-        return ["_sf_graph", name.asJson].concat(body.asJson);
-      },
       GraphElement: function(_1, decl, _2) {
         return decl.asJson;
       },
@@ -528,7 +512,6 @@ function createSemantics(grammar) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       ForExpression: function(_1, _2, initializers, condition, body) {
-        console.warn('ForExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
         var retvals = [];
         var upvalNames = [];
         var bodyExprs = body.asJson.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, false));
@@ -738,4 +721,3 @@ var parseExpressions = function(source: string) {
   return semantics(m).asJson;
 }
 
-module.exports = parseExpressions;
