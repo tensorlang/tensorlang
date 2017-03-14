@@ -91,7 +91,7 @@ class PalletParser:
   # TODO(adamb) Modify to *only* take input via stdin/command-line.
   def _parse_external(self, source):
     ctx = py_mini_racer.MiniRacer()
-    with open("lib/parse.js") as f:
+    with open(path.join(path.dirname(__file__), "../lib/parse.js")) as f:
       ctx.eval(f.read())
     expr = ctx.call("parse.parseExpressions", source)
     # pp(expr)
@@ -211,6 +211,13 @@ def main():
   parser.add_argument("--input-json", nargs='?', type=str,
                       help="""JSON file to load.""")
 
+  parser.add_argument("--workspace",
+                      help="""Default value for workspace""")
+  parser.add_argument("--log-root", type=str,
+                      help="""Which directory to calculate default log dir from.""")
+  parser.add_argument("--log-dir", type=str,
+                      help="""Which directory to put logs in.""")
+
   parser.add_argument("--output", default=False, action='store_const', const=True,
                       help="""Output graph""")
   parser.add_argument("--output-root", type=str, default=".",
@@ -238,6 +245,35 @@ def main():
 
   if should_parse and not (FLAGS.repl or FLAGS.run or FLAGS.test or FLAGS.output):
     FLAGS.output = True
+
+  def search_upwards(startdir, filename):
+    curdir = startdir
+    while True:
+      if path.exists(path.join(curdir, filename)):
+        return curdir
+      lastdir = curdir
+      curdir = path.dirname(curdir)
+      if curdir == lastdir:
+        return None
+
+  if not FLAGS.workspace:
+    FLAGS.workspace = os.environ.get("NAOROOT", "")
+    if not FLAGS.workspace:
+      FLAGS.workspace = search_upwards(os.getcwd(), ".naoroot")
+    if not FLAGS.workspace:
+      FLAGS.workspace = "."
+
+  if FLAGS.output_root is None:
+    FLAGS.output_root = path.join(FLAGS.workspace, "pkg")
+
+  if FLAGS.root is None:
+    FLAGS.root = path.join(FLAGS.workspace, "src")
+
+  if FLAGS.log_root is None:
+    FLAGS.log_root = path.join(FLAGS.workspace, "log")
+
+  if FLAGS.tensorboard is None:
+    FLAGS.tensorboard = "127.0.0.1:6006"
 
   meta_graph_def = None
 
@@ -293,6 +329,14 @@ def main():
   output_package_pattern = "(?:" + str.join("|", output_package_names) + ")"
   FLAGS.output_result_pattern = FLAGS.output_result_pattern.replace("${package}", output_package_pattern)
 
+  def log_dir_fn(pkg_names):
+    if FLAGS.log_dir:
+      return FLAGS.log_dir
+
+    # HACK(adamb) Should parameterize this
+    run_name = datetime.datetime.utcnow().strftime("%F_%H-%M-%S")
+    return path.join(FLAGS.log_root, pkg_names[0], run_name)
+
   if FLAGS.train:
     def post_train(session, result_scope_prefixes):
       graph = session.graph
@@ -318,6 +362,7 @@ def main():
       feed_dict={},
       result_pattern=re.compile(FLAGS.train_result_pattern),
       finish_session_fn=post_train,
+      log_dir_fn=log_dir_fn,
     )
     meta_graph_def, _ = meta_graph.export_scoped_meta_graph()
 
@@ -325,6 +370,7 @@ def main():
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict={},
+      log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
 
@@ -392,6 +438,7 @@ def main():
     results = graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict=feed_dict,
+      log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.run_result_pattern),
     )
 

@@ -1,10 +1,14 @@
 /* @flow */
 'use strict';
 
-var test = require('tape');
-var spawnProcess = require('./util/spawnProcess');
+const test = require('tape');
+const tmp = require('tmp');
+const fs = require('fs');
+const path = require('path');
+const spawnProcess = require('./util/spawnProcess');
 
-var testCases = [
+const testCases = [
+  ...require('./fixtures/imports'),
   ...require('./fixtures/simple'),
   ...require('./fixtures/loop'),
   ...require('./fixtures/errors'),
@@ -54,6 +58,22 @@ testCases.forEach(
         }
       }
 
+      var workspaceTmpDir;
+      if (tc.sources) {
+        // Create temporary directory.
+        workspaceTmpDir = tmp.dirSync({unsafeCleanup: true});
+        additionalArgs.push("--workspace", workspaceTmpDir.name);
+
+        const srcDir = path.join(workspaceTmpDir.name, "src");
+        fs.mkdirSync(srcDir)
+        // Populate directory.
+        for (const key in tc.sources) {
+          const content = tc.sources[key];
+          const p = path.join(srcDir, key);
+          fs.writeFileSync(p, content);
+        }
+      }
+
       spawnProcess.withStdinCapturingStdout(
         `${__dirname}/../bin/nao`,
         [
@@ -67,6 +87,7 @@ testCases.forEach(
           checkText(str);
           t.assert(!shouldFail, `Test should fail`);
           t.end();
+          workspaceTmpDir && workspaceTmpDir.removeCallback();
         },
         (err) => {
           checkText(err.message);
@@ -75,6 +96,7 @@ testCases.forEach(
             t.error(err, `Test shouldn't fail`);
           }
           t.end();
+          workspaceTmpDir && workspaceTmpDir.removeCallback();
         }
       )
     });

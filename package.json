@@ -1,5 +1,7 @@
 {
   "devDependencies": {
+    "babel-cli": "^6.24.0",
+    "babel-plugin-transform-flow-strip-types": "^6.22.0",
     "browserify": "^14.1.0",
     "exposify": "^0.5.0",
     "faucet": "^0.0.1",
@@ -10,6 +12,7 @@
     "stringify": "^5.1.0",
     "tape": "^4.6.3",
     "tape-catch": "^1.0.6",
+    "tmp": "^0.0.31",
     "unflowify": "^1.0.1"
   },
   "dependencies": {
@@ -17,12 +20,14 @@
     "ohm-js": "^0.13.1"
   },
   "scripts": {
-    "build": "browserify -t unflowify -t [ stringify --extensions [.ohm] ] src/parse.js --standalone parse > lib/parse.js"
-  },
-  "bin": {
-    "nao": "lib/cli.js"
+    "build": "browserify -t unflowify -t [ stringify --extensions [.ohm] ] src/parse.js --standalone parse > lib/parse.js",
   },
   "files": [
     "lib"
-  ]
+  ],
+  "babel": {
+    "plugins": [
+      "transform-flow-strip-types"
+    ]
+  }
 }
