@@ -150,9 +150,9 @@ def main():
         return None
 
   if not FLAGS.workspace:
-    FLAGS.workspace = os.environ.get("NAOROOT", "")
+    FLAGS.workspace = os.environ.get("NAOPATH", "")
     if not FLAGS.workspace:
-      FLAGS.workspace = search_upwards(os.getcwd(), ".naoroot")
+      FLAGS.workspace = search_upwards(os.getcwd(), ".naopath")
     if not FLAGS.workspace:
       FLAGS.workspace = "."
 
