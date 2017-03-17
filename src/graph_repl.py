@@ -1,18 +1,44 @@
-import atexit
-import os
-import readline
-import subprocess
-import json
-
 import tensorflow as tf
 
 import graph_gen
 import graph_function
 
+class ReplSession:
+  def __init__(self, parser):
+    self._parser = parser
+    g, visitor, ctx = graph_gen.new_compilation_env()
+    self._g = g
+    self._visitor = visitor
+    self._ctx = ctx
+    self._session = tf.Session()
+
+  def run(self, src):
+    self._parser.clear()
+    self._parser.put_source("main", src)
+    self._parser.resolve_import("main", None)
+    exprs = self._parser.pallet()
+    last_expr_result = self._visitor._visit_exprs(self._ctx, exprs)
+
+    pkg = self._ctx.fully_qualified_package("main")
+    c = pkg.ctx()
+
+    above = c.get_above()
+    if isinstance(above, graph_function.RetvalBag):
+      above = above.get(None)
+
+    if isinstance(above, (tf.Tensor, tf.Variable, tf.Operation)):
+      return above.eval(session=self._session)
+
+  def __del__(self):
+    self._session.close()
+
+import atexit
+import os
+import readline
+
 HISTORY_BASENAME = '.nao_history'
 
-
-def run():
+def run(parser):
   histfile = os.path.join(os.path.expanduser("~"), HISTORY_BASENAME)
 
   try:
@@ -27,48 +53,13 @@ def run():
     readline.set_history_length(1000)
     readline.append_history_file(new_h_len - prev_h_len, histfile)
 
-  with tf.Session() as sess:
-    g, visitor, ctx = graph_gen.new_compilation_env()
+  repl_session = ReplSession(parser)
+  while True:
+    try:
+      src = input("> ")
+      if src == "":
+        continue
+    except EOFError:
+      break
 
-    while True:
-      try:
-        src = input("> ")
-        if src == "":
-          continue
-      except EOFError:
-        break
-
-      with subprocess.Popen(
-          ["node", "lib/cli.js", "--source", src, "--parse=-"],
-          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
-        expr_text = proc.stdout.read().decode('utf-8')
-      exprs = json.loads(expr_text)
-      last_expr_result = visitor._visit_exprs(ctx, exprs)
-
-      pkg = ctx.fully_qualified_package("main")
-      c = pkg.ctx()
-
-      # Actually need to grab all the *leaves*
-      # print(exprs)
-      # print(c.leaves())
-      # print(last_expr_result)
-      above = c.get_above()
-      if isinstance(above, graph_function.RetvalBag):
-        above = above.get(None)
-
-      if isinstance(above, (tf.Tensor, tf.Variable, tf.Operation)):
-        r = above.eval()
-        print(r)
-
-    # meta_graph_def = graph_gen.meta_graph_def_from_exprs(exprs)
-    # print(meta_graph_def)
-
-    # TODO(adamb) Support import
-    # TODO(adamb) Support literal tensors
-    # TODO(adamb) Support defining functions
-    # TODO(adamb) Support macros
-
-    # Parse string -> sexpr
-    # Compile sexpr
-    # Run sexpr
-    # print(src)
+    print(repl_session.run(src))

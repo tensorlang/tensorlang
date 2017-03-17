@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import os
 import sys
+import datetime
 
 import argparse
 import json
@@ -21,7 +22,7 @@ import graph_query
 import graph_xform
 import graph_repl
 import graph_execution
-import parser
+import parser as source_parser
 
 import tensorflow as tf
 from tensorflow.python.framework import meta_graph
@@ -44,7 +45,7 @@ def compile_meta_graph(input_json):
 
 
 def parse_packages(src_root, pkg_root, package_names):
-  p = parser.PalletParser(src_root, pkg_root)
+  p = source_parser.PalletParser(src_root, pkg_root)
 
   for package_name in package_names:
     p.resolve_import(package_name, None)
@@ -52,7 +53,7 @@ def parse_packages(src_root, pkg_root, package_names):
   return p.pallet()
 
 def parse_source(src_root, pkg_root, package_name, source):
-  p = parser.PalletParser(src_root, pkg_root)
+  p = source_parser.PalletParser(src_root, pkg_root)
   p.put_source(package_name, source)
   p.resolve_import(package_name, None)
 
@@ -68,6 +69,9 @@ def main():
                       help="""Specify source code instead of reading from file""")
 
   parser.add_argument("--metagraphdef", nargs='?', type=str,
+  parser.add_argument("--reopen-stderr")
+  parser.add_argument("--reopen-stdout")
+
                       help="""Graph file to load.""")
   parser.add_argument("--binary-metagraphdef", nargs='?', type=bool, default=False,
                       help="""Whether or not input is binary.""")
@@ -95,6 +99,12 @@ def main():
 
   parser.add_argument("--repl", default=False, action='store_const', const=True,
                       help="""Start REPL""")
+
+  parser.add_argument("--tensorboard", nargs='?', default="",
+                      help="""Start tensorboard server on the given IP:PORT, with the given --log-root or --log-dir""")
+
+  parser.add_argument("--jupyter-kernel", nargs='?', default="",
+                      help="""Start Jupyter kernel with the given configuration file""")
 
   parser.add_argument("--train", default=False, action='store_const', const=True,
                       help="""Run train graphs with given (or default) --train-* options""")
@@ -129,6 +139,15 @@ def main():
   FLAGS = parser.parse_args()
 
   package_names = FLAGS.package_names
+  if FLAGS.reopen_stderr:
+    stderr_file = open(FLAGS.reopen_stderr, 'a')
+    os.close(sys.stderr.fileno())
+    os.dup2(stderr_file.fileno(), sys.stderr.fileno())
+
+  if FLAGS.reopen_stdout:
+    stdout_file = open(FLAGS.reopen_stdout, 'a')
+    os.close(sys.stdout.fileno())
+    os.dup2(stdout_file.fileno(), sys.stdout.fileno())
 
 
   should_parse = len(package_names) > 0 or FLAGS.source
@@ -221,6 +240,39 @@ def main():
 
   output_package_pattern = "(?:" + str.join("|", output_package_names) + ")"
   FLAGS.output_result_pattern = FLAGS.output_result_pattern.replace("${package}", output_package_pattern)
+  if FLAGS.tensorboard != "":
+    tb_host, tb_port = FLAGS.tensorboard.split(':', 2)
+    tb_logdir = FLAGS.log_dir or FLAGS.log_root
+    if tb_port is not None:
+      tb_port = int(tb_port)
+
+    from gui import tensorboard_server
+    exit(tensorboard_server.main(tb_logdir, tb_host=tb_host, tb_port=tb_port))
+
+  if FLAGS.jupyter_kernel != "":
+    jupyter_config_file = FLAGS.jupyter_kernel
+    from gui import jupyter_kernel, jupyter_kernel_driver
+
+    if jupyter_config_file:
+      eprint("Reading jupyter_config file '%s'..." % jupyter_config_file)
+      jupyter_config = json.loads("".join(open(jupyter_config_file).readlines()))
+    else:
+      jupyter_config = {
+        'control_port'      : 0,
+        'hb_port'           : 0,
+        'iopub_port'        : 0,
+        'ip'                : '127.0.0.1',
+        'key'               : str(uuid.uuid4()),
+        'shell_port'        : 0,
+        'signature_scheme'  : 'hmac-sha256',
+        'stdin_port'        : 0,
+        'transport'         : 'tcp'
+      }
+
+    pallet_parser = source_parser.PalletParser(FLAGS.root, FLAGS.output_root)
+    repl_session = graph_repl.ReplSession(pallet_parser)
+    driver = jupyter_kernel_driver.Driver(repl_session)
+    exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
 
   def log_dir_fn(pkg_names):
     if FLAGS.log_dir:
@@ -343,7 +395,6 @@ def main():
     )
 
   if FLAGS.repl:
-    graph_repl.run()
 
 if __name__ == '__main__':
   try:

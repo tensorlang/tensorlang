@@ -4,9 +4,7 @@ from py_mini_racer import py_mini_racer
 
 class PalletParser:
   def __init__(self, src_root, pkg_root):
-    self._pallet = []
-    self._source_cache = {}
-    self._import_cache = {}
+    self.clear()
 
     self._attempts = [
       {
@@ -25,6 +23,11 @@ class PalletParser:
         "dir": pkg_root,
       },
     ]
+
+  def clear(self):
+    self._pallet = []
+    self._source_cache = {}
+    self._import_cache = {}
 
   def pallet(self):
     return self._pallet[:]
