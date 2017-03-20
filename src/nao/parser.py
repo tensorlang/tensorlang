@@ -1,6 +1,12 @@
+import pprint
+import sys
+import pkgutil
+
 from os import path
 
 from py_mini_racer import py_mini_racer
+
+pp = pprint.PrettyPrinter(indent=2, stream=sys.stderr).pprint
 
 class PalletParser:
   def __init__(self, src_root, pkg_root):
@@ -53,10 +59,8 @@ class PalletParser:
   # TODO(adamb) Modify to *only* take input via stdin/command-line.
   def _parse_external(self, source):
     ctx = py_mini_racer.MiniRacer()
-    with open(path.join(path.dirname(__file__), "../lib/parse.js")) as f:
-      ctx.eval(f.read())
+    ctx.eval(pkgutil.get_data("nao_parser", "parse.js"))
     expr = ctx.call("parse.parseExpressions", source)
-    # pp(expr)
     return expr
 
   def _attempt(self, language, import_path, imported_scope, filepath=None, content=None):

@@ -1,0 +1,11 @@
+# Transitive dependencies
+appdirs == 1.4.3
+enum34 == 1.1.6
+numpy == 1.12.1
+packaging == 16.8
+protobuf == 3.2.0
+pyparsing ==  2.2.0
+pyzmq == 16.0.2
+setuptools == 34.3.2
+six == 1.10.0
+wheel == 0.29.0

@@ -1,0 +1,8 @@
+graft src
+graft gen
+
+include *.js
+include requirements.txt
+include requirements-transitive.txt
+
+global-exclude *.py[odc] __pycache__

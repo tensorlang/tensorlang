@@ -1,0 +1,9 @@
+
+# For Jupyter notebook
+pyzmq == 16.0.2
+tornado == 4.4.2
+
+# For embedded node
+py-mini-racer == 0.1.8
+
+tensorflow_gpu == 1.0.0

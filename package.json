@@ -21,8 +21,9 @@
     "ohm-js": "^0.13.1"
   },
   "scripts": {
-    "build": "browserify -t unflowify -t [ stringify --extensions [.ohm] ] src/parse.js --standalone parse > lib/parse.js",
-    "electron": "electron src/gui/electron-main.js"
+    "build-parser": "browserify -t unflowify -t [ stringify --extensions [.ohm] ] src/parse.js --standalone parse > $OUTDIR/parse.js",
+    "test": "babel-node tests/fixtures",
+    "electron": "electron src/electron-main.js"
   },
   "files": [
     "lib"

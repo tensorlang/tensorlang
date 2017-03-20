@@ -1,7 +1,7 @@
 import tensorflow as tf
 
-import graph_gen
-import graph_function
+from nao import graph_gen
+from nao import graph_function
 
 class ReplSession:
   def __init__(self, parser):

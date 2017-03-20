@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from collections import OrderedDict
 
-import graph_function
+from nao import graph_function
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -138,6 +138,18 @@ class ProxyContext:
   def get_attr(self, name):
     return self._other.get_attr(name)
 
+  def update_local(self, name, rhs):
+    # TODO(adamb) Should remember proxied updates so that we can properly update
+    #     the closed-over var after returning from a loop.
+    v = self.get_local(name)
+    if not isinstance(v, tf.Variable) and not (isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype):
+      raise Exception("%s not a variable: %s" % (name, v))
+      eprint("proxy updating local", name, "from", v, "to", rhs)
+      v = tf.assign(v, rhs)
+      eprint("proxy updated local", name, "is", v)
+      self._locals[name] = v
+      return v
+
   def get_local(self, name):
     if type(name) != str:
       raise Exception("Can't get_local for non string: %s" % name)
@@ -218,6 +230,7 @@ class Context:
     if name in self._fully_qualified_packages:
       raise Exception("Already defined package: %s" % name)
 
+    eprint("Defining package", name)
     self._fully_qualified_packages[name] = pkg
 
   def fully_qualified_package(self, name):
@@ -230,6 +243,7 @@ class Context:
     if name in self._imported_packages:
       raise Exception("Already imported package: %s" % name)
 
+    eprint("Importing package", name)
     self._imported_packages[name] = pkg
 
   def imported_package(self, name):
@@ -243,6 +257,7 @@ class Context:
     ctx._attrs = copy.copy(ctx._attrs)
     ctx._locals = copy.copy(ctx._locals)
     return ctx
+
 
   def get_above(self):
     return self._above
@@ -339,5 +354,5 @@ class Context:
     #   l = l | self._delegate.leaves()
     return l
 
-  def __str__(self):
-    return "%s" % self._locals
+  # def __str__(self):
+  #   return "%s" % self._locals

@@ -55,6 +55,9 @@ class Package:
     if not n[0].isupper():
       raise Exception("Tried to use non-exported value named: %s" % n)
 
+    if name:
+      return tf.identity(value, name=name)
+
     return value
 
 class PythonPackage:
@@ -63,7 +66,7 @@ class PythonPackage:
     self._prepend_with_context = prepend_with_context
 
   def apply(self, visitor, ctx, name, attrs, args):
-    eprint("applying %s to args %s" % (self, args))
+    # eprint("applying %s to args %s" % (self, args))
     n, *_ = args
     if n.startswith('__'):
       raise Exception("Tried to use non-exported namespace entry named: %s" % n)
@@ -123,18 +126,22 @@ class MetaGraphDefPackage:
 
     nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
     nodes.sort()
+    eprint('no error, but got nodes', nodes)
 
     g = tf.get_default_graph()
     exports = {} # name -> tensor | function
     for name in tensors:
+      eprint("tensor", name, "%s/%s" % (import_scope, name))
       exports[name] = g.get_operation_by_name("%s/%s" % (import_scope, name))
 
     for name, (scope, full_input_names, output_names) in functions.items():
       # inputs = [g.get_tensor_by_name("%s/%s:0" % (import_scope, full_input_name)) for full_input_name in full_input_names]
       inputs = [g.get_tensor_by_name("%s/%s:0" % (import_scope, full_input_name)) for full_input_name in full_input_names]
       source_scope = "%s/%s/%s" % (import_path, internal_scope, scope)
+      eprint("sgv_scope", "%s/%s/%s" % (import_path, internal_scope, scope), g)
       source_pattern = "%s/(?:_|outputs)/.*" % source_scope
       sgv = make_view(source_pattern, graph=g)
+      eprint("sgv.inputs", list(sgv.inputs))
       exports[name] = SubGraphViewFunction(name, sgv, source_scope, inputs, output_names)
 
     self._exports = exports
@@ -170,6 +177,7 @@ class SubGraphViewFunction:
     eprint("full_scope", full_scope)
     eprint("scope_name", scope_name)
     replacements_ts = dict(zip(self._inputs, args))
+    eprint("replacements_ts", replacements_ts)
 
     with tf.name_scope(None):
       self._copy_with_input_replacements(replacements_ts, full_scope)
@@ -207,19 +215,24 @@ class SubGraphViewFunction:
     # Replace tensor if possible.
     def replace_t_with_replacement_handler(info, t):
       if t in replacement_ts:
+        eprint("Did find", t, "in", replacement_ts)
         return replacement_ts[t]
       else:
+        eprint("Did not find", t, "in", replacement_ts)
         return transform.keep_t_if_possible_handler(info, t)
     copier.transform_external_input_handler = replace_t_with_replacement_handler
 
     orig_transform_op = copier.transform_op_handler
     def transform_op(info, op, copy_shape=True):
+      eprint("transform_op", op.name)
       if isinstance(op, tf.Variable):
+        eprint("Won't copy variable", op)
         return op
 
       return orig_transform_op(info, op, copy_shape)
     copier.transform_op_handler = transform_op
     dst_graph = tf.get_default_graph()
+    eprint("dst_graph", dst_graph)
 
     return copier(
         self._sgv, dst_graph, dst_scope, self._src_scope, reuse_dst_scope=False)
@@ -292,7 +305,7 @@ class PrimitiveFunction:
     if self._prepend_with_context:
       args = [ctx, *args]
 
-    eprint("Applying", "call %s with name %s args %s and kwargs %s"  % (self._fn, name, args, attrs))
+    # eprint("Applying", "call %s with name %s args %s and kwargs %s"  % (self._fn, name, args, attrs))
 
     return ctx.call(self._fn, args, attrs)
 
@@ -438,7 +451,7 @@ class TransformedFunction:
       "trainable": vars,
     }
 
-    eprint("macro_attrs", macro_attrs)
+    # eprint("macro_attrs", macro_attrs)
 
     out = self._macro.apply_attrs(visitor, macro_attrs)
 

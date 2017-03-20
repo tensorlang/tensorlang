@@ -17,10 +17,10 @@ from tensorflow.core.framework import graph_pb2
 from tensorflow.core.framework import variable_pb2
 from tensorflow.core.protobuf import control_flow_pb2
 
-import graph_context
-import graph_ffi
-import graph_function
-import graph_io
+from nao import graph_context
+from nao import graph_ffi
+from nao import graph_function
+from nao import graph_io
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -32,7 +32,9 @@ def _while_prune(meta_graph_def, prune_names):
     n = nodes[ix]
     if n.name in prune_names:
       del nodes[ix]
+      # eprint("n.name removed from graph_def!!", n.name)
     else:
+      # eprint("n.name not in proxy_names", n.name)
       pass
 
 
@@ -56,6 +58,7 @@ def _while_fix_context_scope(meta_graph_def, import_scope):
     # for k in list(external_values.keys()):
     #   external_values[k] = import_scope + "/" + external_values[k]
 
+    # eprint("while_context_def", while_context_def, while_context_def.SerializeToString())
     wc_values[wcd_ix] = while_context_def.SerializeToString()
 
 
@@ -74,6 +77,7 @@ def _while_fix_colocations(meta_graph_def, input_map):
         if class_value.startswith(b'loc:@'):
           op_name = class_value[5:].decode()
           if not op_name in input_map:
+            # eprint("Skipping replacement of", op_name)
             continue
           # replacement_name = input_map[op_name].name
           # replacement = compat.as_bytes("loc:@" + replacement_name)
@@ -373,10 +377,12 @@ class TopLevel:
       with tf.name_scope(None):
         # with tf.control_dependencies(None):
           try:
+            # eprint('while embed', import_scope, input_map, retval_names)
             imported_vars = tf.train.import_meta_graph(
                 meta_graph_def,
                 import_scope=import_scope,
                 input_map=input_map)
+            # eprint('imported_vars', import_scope, imported_vars)
           except ValueError as ve:
             # HACK(adamb) We don't want to error on unused input_map values.
             pass
@@ -410,6 +416,7 @@ class TopLevel:
         with tf.control_dependencies(None):
           p_name = None
           if isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype:
+            # eprint("creating ref proxy for", v)
 
             initial_value = 0
             if v.dtype.base_dtype == tf.resource:
@@ -467,6 +474,7 @@ class TopLevel:
             p_name = p.op.name
             proxy_names.add(p.op.name)
 
+      # eprint("creating proxy placeholder for", self, v.graph, p.name, p, v)
 
       # if placeholder_name and placeholder_name != p.op.name:
       #   raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
@@ -477,6 +485,7 @@ class TopLevel:
         input_values.append(v)
       return (True, p)
 
+    # eprint('init_exprs', init_exprs)
     initial_value_ctx = ctx.subcontext()
     initial_tensor_list = None
     initial_local_names = None
@@ -510,6 +519,7 @@ class TopLevel:
     input_map = proxyctx.input_map()
     # input_map_shapes = [v.get_shape() for v in input_values]
     # eprint("while input_map_shapes", input_map_shapes)
+    # eprint("while names to remove", proxy_names)
 
     # HACK(adamb) Don't actually import any nodes that are only proxies.
     #     This should probably be done automatically by the TF import
@@ -534,13 +544,24 @@ class TopLevel:
       if t.name in local_name_by_tensor_name:
         local_name = local_name_by_tensor_name[t.name]
         if local_name in body_retval_dict:
+          # eprint("while next vals", ix, t.get_shape(), t.name, local_name, body_retval_dict[local_name])
           body_retval_names.append("%s:0" % body_retval_dict[local_name])
           next_value_ixs.append(ix)
         else:
+          # eprint("while next vals skipped", ix, local_name)
           pass
       else:
+        # eprint("while next vals t.name", ix, t.name)
         pass
 
+    # eprint("while initial_local_names", initial_local_names)
+    # eprint("while initial_tensor_list", initial_tensor_list)
+    # eprint("while input_map", input_map)
+    # eprint("while body_retvals", body_retvals)
+    # eprint("while body_retval_dict", body_retval_dict)
+    # eprint("while body_retval_names", body_retval_names)
+    # eprint("while cond_retval_name", cond_retval_name)
+    # eprint("while local_name_by_tensor_name", local_name_by_tensor_name)
 
     def cond(*a):
       # We use a variable_scope because name_scope has a strange
@@ -559,6 +580,7 @@ class TopLevel:
 
     def body(*a):
       body_input_map = dict(zip(input_keys, a))
+      # eprint("while body", body_input_map)
 
       # We use a variable_scope because name_scope has a strange
       # only-sometimes-present trailing / that messes with everything.
@@ -575,14 +597,19 @@ class TopLevel:
           body_meta_graph_def)
 
       body_results = list(a)
+      # eprint('while body a', a)
+      # eprint('while body_retval_names', body_retval_names)
+      # eprint('while next_values', next_values)
       for ix, val in zip(next_value_ixs, next_values):
         val.set_shape(a[ix].get_shape())
         # eprint('while shape', ix, a[ix], a[ix].get_shape(), val, val.get_shape())
         # val.set_shape(val.get_shape())
         body_results[ix] = val
 
+      # eprint('while body_results', body_results)
       return body_results
 
+    # eprint("tf.while_loop(cond=%s, body=%s, loop_vars=%s)" % (cond, body, loop_vars))
 
     # If we're referencing variables, we need to alert listeners.
     for v in loop_vars:
@@ -597,6 +624,7 @@ class TopLevel:
         parallel_iterations=1,
         back_prop=False,
       )
+      # eprint("body_meta_graph_def", body_meta_graph_def)
       # eprint("have graph", tf.get_default_graph().as_graph_def(add_shapes=True))
     except KeyError as ke:
       # eprint("error, but body_meta_graph_def is", body_meta_graph_def)
@@ -644,6 +672,25 @@ class TopLevel:
     return ctx.get_attr(name)
 
   # generating graphs directly
+  # def visit_graph_exprs(self, ctx, retval_names, exprs):
+  #   for expr in exprs:
+  #     result = None
+  #     if expr[0] == "__retval":
+  #       name = expr[1]
+  #       subexpr = expr[2]
+  #       result = self.visit(ctx, subexpr)
+  #       ctx.define_local(name, result)
+  #       retval_names.append(name)
+  #     elif expr[0] == "_sf_after_leaves":
+  #       # TODO(adamb) Should actually nest local variables AND leaves
+  #       after_exprs = expr[1:]
+  #       leaves = ctx.leaves()
+  #       with tf.control_dependencies(leaves):
+  #         result = self.visit_graph_exprs(ctx, retval_names, after_exprs)
+  #     else:
+  #       result = self.visit(ctx, expr)
+  #
+  #     ctx.set_above(result)
 
   def _named_var_update(self, ctx, name, rhs):
     return ctx.update_local(name, rhs)
@@ -658,6 +705,7 @@ class TopLevel:
         initial_value=initializer,
         expected_shape=shape,
         dtype=dtype)
+    # eprint("named var", v, type(v))
 
     ctx.define_local(name, v)
 
@@ -667,7 +715,9 @@ class TopLevel:
 
   def assert_shape(self, ctx, shape, val):
     # TODO(adamb) Actually check shape
+    # eprint('%s.set_shape(%s)' % (val, shape))
     val.set_shape(shape)
+    # eprint('shape is now %s' % (val))
     return val
 
   def _sf_index(self, ctx, expr, index_expr):
@@ -693,11 +743,13 @@ class TopLevel:
       return self._sf_python_package(ctx, name, path)
 
     if type == "tensorflow:metagraph:pbtxt":
+      eprint("_sf_tf_metagraph_package", name, scope)
       return self._sf_tf_metagraph_package(ctx, name, scope, path, binary=False)
 
     raise Exception("Unknown package type %s" % type)
 
   def _sf_tf_metagraph_package(self, ctx, name, scope, path, binary):
+    eprint("_sf_tf_metagraph_package", name, scope)
     # TODO(adamb) how do we handle the fact that there may be multiple packages
     #     within the given file. Should we only parse out the one we want?
     meta_graph_def = graph_io.read_meta_graph_def(path, binary)
@@ -737,9 +789,19 @@ class TopLevel:
   #     When functions are emitted as FunctionDefs, this can be removed.
   def _maybe_export_function(self, package_name, subctx, name, value):
     if not name[0].isupper():
+      eprint("not capitalized", name)
       return
 
+    # if name.startswith("Train"):
+    #   eprint("won't export training function", name)
+    #   return
+    #
+    # if name.startswith("Test"):
+    #   eprint("won't export testing function", name)
+    #   return
+
     value = self.__unwrap_bag(value)
+    eprint("considering", name)
 
     if not isinstance(value, graph_function.DeclaredFunction):
       eprint("isn't a declared function", type(value))
@@ -758,6 +820,7 @@ class TopLevel:
       var_set.add(var.name)
     self.add_variable_listener(on_var)
 
+    eprint("exporting", name, fn)
     with tf.variable_scope(name):
       with tf.variable_scope("inputs"):
         args = [tf.placeholder(arg_dtype, arg_shape, arg_name) for (arg_name, arg_shape, arg_dtype) in fn._arg_specs()]
@@ -770,10 +833,17 @@ class TopLevel:
         for (retval_name, retval_inner_name) in fn._retval_specs():
           tensor_prefix = "%s/%s" % (package_name, name)
           try:
-            returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
-          except KeyError:
-            # If we fail to find the tensor above, perhaps it was just an input.
-            returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
+            try:
+              returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
+            except KeyError:
+              eprint("repeating lookup of %s in prefix %s for retval %s" % (retval_inner_name, tensor_prefix, retval_name))
+              # If we fail to find the tensor above, perhaps it was just an input.
+              returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
+          except KeyError as ke:
+            nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
+            nodes.sort()
+            eprint('error, but got nodes', nodes)
+            raise ke
 
           tf.identity(returned_tensor, name=retval_name)
 
@@ -814,6 +884,11 @@ class TopLevel:
     is_tensor_ref = isinstance(result, tf.Tensor) and result.dtype._is_ref_dtype
     is_variable = isinstance(result, tf.Variable)
     if is_variable or is_tensor_ref:
+      # if is_tensor_ref:
+      #   eprint("saw tensor ref", result, result.op)
+      # else:
+      #   eprint("saw variable", result)
+
       for listener in self._variable_listeners:
         listener(result)
 

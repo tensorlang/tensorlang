@@ -16,13 +16,13 @@ import gc
 
 from os import path
 
-import graph_gen
-import graph_io
-import graph_query
-import graph_xform
-import graph_repl
-import graph_execution
-import parser as source_parser
+from nao import graph_gen
+from nao import graph_io
+from nao import graph_query
+from nao import graph_xform
+from nao import graph_repl
+from nao import graph_execution
+from nao import parser as source_parser
 
 import tensorflow as tf
 from tensorflow.python.framework import meta_graph
@@ -35,6 +35,8 @@ import subprocess
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
+pp = pprint.PrettyPrinter(indent=2, stream=sys.stderr).pprint
+
 def compile_meta_graph(input_json):
   with open(input_json, "r") as f:
     s = f.read()
@@ -42,7 +44,6 @@ def compile_meta_graph(input_json):
     # pp.pprint(input_exprs)
 
     return graph_gen.meta_graph_def_from_exprs(input_exprs)
-
 
 def parse_packages(src_root, pkg_root, package_names):
   p = source_parser.PalletParser(src_root, pkg_root)
@@ -63,38 +64,38 @@ def main():
   parser = argparse.ArgumentParser()
 
   parser.add_argument("package_names", type=str, nargs='*')
-  parser.add_argument("--root", type=str, default=".",
+  parser.add_argument("--root", type=str,
                       help="""Specify root directory to search for imports from""")
   parser.add_argument("--source", type=str,
                       help="""Specify source code instead of reading from file""")
 
-  parser.add_argument("--metagraphdef", nargs='?', type=str,
   parser.add_argument("--reopen-stderr")
   parser.add_argument("--reopen-stdout")
 
+  parser.add_argument("--metagraphdef", type=str,
                       help="""Graph file to load.""")
-  parser.add_argument("--binary-metagraphdef", nargs='?', type=bool, default=False,
+  parser.add_argument("--binary-metagraphdef", type=bool, default=False,
                       help="""Whether or not input is binary.""")
-  parser.add_argument("--feed-constants", nargs='?', type=str,
+  parser.add_argument("--feed-constants", type=str,
                       help="""Path to GraphDef protobuf with constants to feed""")
   parser.add_argument("--feed-constants-strip", nargs='?', type=str, default="",
                       help="""Prefix to filter for (and strip from) constants""")
-  parser.add_argument("--feed-constants-prefix", nargs='?', type=str,
+  parser.add_argument("--feed-constants-prefix", type=str,
                       help="""Prefix to add to constant names in feed""")
-  parser.add_argument("--feed-constants-binary", nargs='?', type=bool, default=False,
+  parser.add_argument("--feed-constants-binary", type=bool, default=False,
                       help="""Whether or not feed constant protobuf is binary""")
 
   parser.add_argument("--run", default=False, action='store_const', const=True,
                       help="""Run the graph with given (or default) --result* and --feed-* options""")
-  parser.add_argument("--run-result-pattern", nargs='?', type=str, default="^(${package}/Main)/outputs/(.*)$",
+  parser.add_argument("--run-result-pattern", type=str, default="^(${package}/Main)/outputs/(.*)$",
                       help="""Pattern to discover run results.""")
   parser.add_argument("--result-binary", default=False, action='store_const', const=True,
                       help="""Whether or not to result in binary.""")
-  parser.add_argument("--result", nargs='?', type=str, default="/dev/stdout")
+  parser.add_argument("--result", type=str, default="/dev/stdout")
 
   parser.add_argument("--test", default=False, action='store_const', const=True,
                       help="""Run the tests graphs with given (or default) --test-* options""")
-  parser.add_argument("--test-result-pattern", nargs='?', type=str, default="^(${package}/Test[^/]*)/outputs/(.*)$",
+  parser.add_argument("--test-result-pattern", type=str, default="^(${package}/Test[^/]*)/outputs/(.*)$",
                       help="""Pattern to discover test graph results.""")
 
   parser.add_argument("--repl", default=False, action='store_const', const=True,
@@ -108,10 +109,10 @@ def main():
 
   parser.add_argument("--train", default=False, action='store_const', const=True,
                       help="""Run train graphs with given (or default) --train-* options""")
-  parser.add_argument("--train-result-pattern", nargs='?', type=str, default="^(${package}/Train[^/]*)/outputs/(.*)$",
+  parser.add_argument("--train-result-pattern", type=str, default="^(${package}/Train[^/]*)/outputs/(.*)$",
                       help="""Pattern to discover train graph results.""")
 
-  parser.add_argument("--input-json", nargs='?', type=str,
+  parser.add_argument("--input-json", type=str,
                       help="""JSON file to load.""")
 
   parser.add_argument("--workspace",
@@ -123,22 +124,21 @@ def main():
 
   parser.add_argument("--output", default=False, action='store_const', const=True,
                       help="""Output graph""")
-  parser.add_argument("--output-root", type=str, default=".",
+  parser.add_argument("--output-root", type=str,
                       help="""When automatically constructing output path, use this as base""")
   parser.add_argument("--output-name", type=str,
                       help="""Base name to use for output file name. Defaults to ${package} if there's only one.""")
-  parser.add_argument("--output-result-pattern", nargs='?', type=str, default="^(${package}/[^/]*)(/outputs/[^/]*)?$",
+  parser.add_argument("--output-result-pattern", type=str, default="^(${package}/[^/]*)(/outputs/[^/]*)?$",
                       help="""Pattern to discover outputs of graph to output.""")
-  parser.add_argument("--output-format", nargs='?', type=str, default="metagraph",
+  parser.add_argument("--output-format", type=str, default="metagraph",
                       help="""Defaults to metagraph""")
   parser.add_argument("--output-binary", default=False, action='store_const', const=True,
                       help="""Whether or not to output in binary.""")
-  parser.add_argument("--output-file", nargs='?', type=str,
+  parser.add_argument("--output-file", type=str,
                       help="""Path to write output to. Defaults to ${output-name}.${output-format}""")
 
   FLAGS = parser.parse_args()
 
-  package_names = FLAGS.package_names
   if FLAGS.reopen_stderr:
     stderr_file = open(FLAGS.reopen_stderr, 'a')
     os.close(sys.stderr.fileno())
@@ -149,6 +149,8 @@ def main():
     os.close(sys.stdout.fileno())
     os.dup2(stdout_file.fileno(), sys.stdout.fileno())
 
+
+  package_names = FLAGS.package_names
 
   should_parse = len(package_names) > 0 or FLAGS.source
   if not (should_parse or FLAGS.run or FLAGS.test or FLAGS.output):
@@ -240,18 +242,21 @@ def main():
 
   output_package_pattern = "(?:" + str.join("|", output_package_names) + ")"
   FLAGS.output_result_pattern = FLAGS.output_result_pattern.replace("${package}", output_package_pattern)
+  eprint("FLAGS", FLAGS)
+  eprint("package_names", package_names)
+
   if FLAGS.tensorboard != "":
     tb_host, tb_port = FLAGS.tensorboard.split(':', 2)
     tb_logdir = FLAGS.log_dir or FLAGS.log_root
     if tb_port is not None:
       tb_port = int(tb_port)
 
-    from gui import tensorboard_server
+    from nao import tensorboard_server
     exit(tensorboard_server.main(tb_logdir, tb_host=tb_host, tb_port=tb_port))
 
   if FLAGS.jupyter_kernel != "":
     jupyter_config_file = FLAGS.jupyter_kernel
-    from gui import jupyter_kernel, jupyter_kernel_driver
+    from nao import jupyter_kernel, jupyter_kernel_driver
 
     if jupyter_config_file:
       eprint("Reading jupyter_config file '%s'..." % jupyter_config_file)
@@ -297,6 +302,7 @@ def main():
       vars = graph_query.find_variables_by_name(
           graph.get_collection_ref("variables"),
           var_names)
+      eprint("saving vars", var_names, vars)
       graph_xform.replace_variable_initializers_with_current_values(
           graph,
           vars,
@@ -338,12 +344,14 @@ def main():
 
       # Look for collection of variable names referenced by this function.
       collection_name = "%s:variable_names" % m.group(1)
+      eprint("collection_name", collection_name)
       function_var_name_bs = meta_graph_def.collection_def[collection_name].bytes_list.value
       for var_name_b in function_var_name_bs:
         # Remember the name of each variable referenced.
         var_names.add(var_name_b.decode('utf-8'))
 
     eprint("var_names", var_names)
+    eprint("output_node_names", output_node_names)
     graph_xform.strip_meta_graph(meta_graph_def, output_node_names, var_names)
 
   if FLAGS.output_file:
@@ -395,10 +403,13 @@ def main():
     )
 
   if FLAGS.repl:
+    graph_repl.run(source_parser.PalletParser(FLAGS.root, FLAGS.output_root))
 
 if __name__ == '__main__':
   try:
     main()
+    # with tf.device("/cpu:0"):
+    #   main()
   except Exception as ex:
     # TODO(adamb) Should do *real* error printing.
     # NOTE(adamb) Need to correlate expressions with line and character numbers!

@@ -1,8 +1,9 @@
-import graph_gen
-import graph_io
-import graph_query
-import graph_xform
 import json
+
+from nao import graph_gen
+from nao import graph_io
+from nao import graph_query
+from nao import graph_xform
 
 from tensorflow.python.framework import meta_graph
 
@@ -67,11 +68,21 @@ def run_session(sess, result_pattern, feed_dict, log_dir_fn, finish_session_fn=N
     coord.join(threads)
     _summary_writer = None
 
-import graph_ffi
+from nao import graph_ffi
 from tensorflow.python.ops import script_ops
 
 def import_and_run_meta_graph(meta_graph_def, result_pattern, feed_dict, log_dir_fn, finish_session_fn=None):
   with create_session() as sess:
+    try:
+      meta_graph.import_scoped_meta_graph(
+        meta_graph_def,
+        input_map=None,
+      )
+    except KeyError as e:
+      nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
+      nodes.sort()
+      eprint('error, but got nodes', nodes)
+      raise e
 
     # NOTE(adamb) Could also store files to copy out in assets_collection
     js_py_func_data_tensor = None

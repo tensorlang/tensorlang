@@ -27,6 +27,16 @@ func fullyConnected(input, weights, biases) {
   input
   tf.matmul(^, weights)
   ^ + biases
+  nn.relu(^)
+  emit s = ^
+}
+
+func readOut(input, weights, biases) {
+  // Fully connected layer. Note that the '+' operation automatically
+  // broadcasts the biases.
+  input
+  tf.matmul(^, weights)
+  ^ + biases
   emit s = ^
 }
 
@@ -50,7 +60,7 @@ func makeLeNet[] {
     tf.reshape(^, {-1, 3136})
 
     fullyConnected(^, fc1_weights, fc1_biases)
-    fullyConnected(^, fc2_weights, fc2_biases) -- r
+    readOut(^, fc2_weights, fc2_biases) -- r
     <- r = r
   }
   emit apply = a
