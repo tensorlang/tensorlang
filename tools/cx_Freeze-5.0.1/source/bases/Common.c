@@ -99,6 +99,11 @@ static int SetExecutableName(
     if (!ptr)
         return FatalError("Unable to calculate directory of executable!");
     *ptr = '\0';
+
+    ptr = strrchr(g_ExecutableDirName, SEP);
+    if (!ptr)
+        return FatalError("Unable to calculate parent directory of executable!");
+    *ptr = '\0';
 #endif
 
     return 0;

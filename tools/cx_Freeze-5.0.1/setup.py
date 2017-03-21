@@ -146,7 +146,11 @@ scripts = ["cxfreeze", "cxfreeze-quickstart"]
 options = dict(bdist_rpm = dict(doc_files = docFiles),
         install = dict(optimize = 1))
 depends = ["source/bases/Common.c"]
+extra_link_args = []
+if sys.platform == "darwin":
+    extra_link_args.append('-Wl,-rpath,@executable_path/../lib')
 console = Extension("cx_Freeze.bases.Console", ["source/bases/Console.c"],
+        extra_link_args = extra_link_args,
         depends = depends, libraries = libraries)
 extensions = [utilModule, console]
 if sys.platform == "win32":

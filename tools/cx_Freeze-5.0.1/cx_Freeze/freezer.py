@@ -184,9 +184,16 @@ class Freezer(object):
             shutil.copymode(source, target)
         self.filesCopied[normalizedTarget] = None
         if copyDependentFiles:
-            for source in self._GetDependentFiles(source):
-                target = os.path.join(self.targetDir, os.path.basename(source))
-                self._CopyFile(source, target, copyDependentFiles)
+            changedDependencies = []
+            for depSource in self._GetDependentFiles(source):
+                depTarget = os.path.join(self.targetDir, "lib", os.path.basename(depSource))
+                self._CopyFile(depSource, depTarget, copyDependentFiles)
+                newName = self._UpdateLibraryName(depTarget)
+                if newName:
+                    changedDependencies.append((depSource, newName))
+
+            if changedDependencies:
+                self._UpdateDependendentFiles(target, changedDependencies)
 
     def _CreateDirectory(self, path):
         if not os.path.isdir(path):
@@ -262,6 +269,34 @@ class Freezer(object):
         else:
             return ["/lib", "/lib32", "/lib64", "/usr/lib", "/usr/lib32",
                     "/usr/lib64"]
+
+    def _UpdateDependendentFiles(self, path, changedDependencies):
+        if sys.platform == "darwin":
+            if not path.endswith(".so") and not path.endswith(".dylib"):
+                return
+            s = os.stat(path)
+            os.chmod(path, stat.S_IWRITE | s.st_mode)
+            command_fragments = ['install_name_tool']
+            for old, new in changedDependencies:
+                command_fragments.extend(["-change", "'%s'" % old, "'%s'" % new])
+            command_fragments.append("'%s'" % path)
+            command = " ".join(command_fragments)
+            for line in os.popen(command):
+                continue
+            os.chmod(path, s.st_mode)
+
+    def _UpdateLibraryName(self, path):
+        if sys.platform == "darwin":
+            name = "@rpath/%s" % os.path.basename(path)
+            if not path.endswith(".so") and not path.endswith(".dylib"):
+                return
+            s = os.stat(path)
+            os.chmod(path, stat.S_IWRITE | s.st_mode)
+            command = 'install_name_tool -id "%s" "%s"' % (name, path)
+            for line in os.popen(command):
+                continue
+            os.chmod(path, s.st_mode)
+            return name
 
     def _GetDependentFiles(self, path):
         """Return the file's dependencies using platform-specific tools (the
@@ -672,7 +707,7 @@ class Executable(object):
         self.script = script
         self.initScript = initScript or "Console"
         self.base = base or "Console"
-        self.targetName = targetName
+        self.targetName = os.path.join("bin", targetName)
         self.icon = icon
         self.shortcutName = shortcutName
         self.shortcutDir = shortcutDir
@@ -689,7 +724,7 @@ class Executable(object):
             name, ext = os.path.splitext(os.path.basename(self.script))
             baseName, ext = os.path.splitext(self.base)
             self.targetName = name + ext
-        name, ext = os.path.splitext(self.targetName)
+        name, ext = os.path.splitext(os.path.basename(self.targetName))
         self.moduleName = "%s__main__" % os.path.normcase(name)
         self.initModuleName = "%s__init__" % os.path.normcase(name)
         self.targetName = os.path.join(freezer.targetDir, self.targetName)
