@@ -612,12 +612,21 @@ class Freezer(object):
                     if module.path is not None:
                         parts.append("__init__")
                     targetName = os.path.join(targetDir, *parts) + ".pyc"
+
+                    # Make target directory writeable if we're modifying it.
+                    targetDirname = os.path.dirname(targetName)
+                    if not os.access(targetDirname, os.W_OK):
+                        targetDirStat = os.stat(targetDirname)
+                        os.chmod(targetDirname, stat.S_IWRITE | targetDirStat.st_mode)
+
                     open(targetName, "wb").write(data)
 
 
             # otherwise, write to the zip file
             elif module.code is not None:
                 zipTime = time.localtime(mtime)[:6]
+                # Don't accept timestamps before 1980. They aren't zip-safe.
+                zipTime = time.localtime(max(315561601, mtime))[:6]
                 fileName = "/".join(module.name.split("."))
                 if module.path:
                     fileName += "/__init__"
