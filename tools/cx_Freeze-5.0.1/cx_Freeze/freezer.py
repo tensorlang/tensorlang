@@ -624,7 +624,6 @@ class Freezer(object):
 
             # otherwise, write to the zip file
             elif module.code is not None:
-                zipTime = time.localtime(mtime)[:6]
                 # Don't accept timestamps before 1980. They aren't zip-safe.
                 zipTime = time.localtime(max(315561601, mtime))[:6]
                 fileName = "/".join(module.name.split("."))
