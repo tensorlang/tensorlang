@@ -64,91 +64,88 @@ def main():
   parser = argparse.ArgumentParser()
 
   parser.add_argument("package_names", type=str, nargs='*')
-  parser.add_argument("--root", type=str,
+  parser.add_argument("--root", metavar='DIR', type=str,
                       help="""Specify root directory to search for imports from""")
   parser.add_argument("--source", type=str,
                       help="""Specify source code instead of reading from file""")
 
-  parser.add_argument("--reopen-stderr")
-  parser.add_argument("--reopen-stdout")
+  parser.add_argument("--reopen-stderr", metavar='FILE', type=argparse.FileType('a', encoding='UTF-8'))
+  parser.add_argument("--reopen-stdout", metavar='FILE', type=argparse.FileType('a', encoding='UTF-8'))
 
-  parser.add_argument("--metagraphdef", type=str,
+  parser.add_argument("--metagraphdef", metavar='FILE', type=str,
                       help="""Graph file to load.""")
-  parser.add_argument("--binary-metagraphdef", type=bool, default=False,
+  parser.add_argument("--binary-metagraphdef", default=False, action='store_const', const=True,
                       help="""Whether or not input is binary.""")
-  parser.add_argument("--feed-constants", type=str,
+  parser.add_argument("--feed-constants", metavar='FILE', type=str,
                       help="""Path to GraphDef protobuf with constants to feed""")
-  parser.add_argument("--feed-constants-strip", nargs='?', type=str, default="",
+  parser.add_argument("--feed-constants-strip", metavar='PREFIX', type=str, default="",
                       help="""Prefix to filter for (and strip from) constants""")
-  parser.add_argument("--feed-constants-prefix", type=str,
+  parser.add_argument("--feed-constants-prefix", metavar='PREFIX', type=str,
                       help="""Prefix to add to constant names in feed""")
-  parser.add_argument("--feed-constants-binary", type=bool, default=False,
+  parser.add_argument("--feed-constants-binary", default=False, action='store_const', const=True,
                       help="""Whether or not feed constant protobuf is binary""")
 
   parser.add_argument("--run", default=False, action='store_const', const=True,
                       help="""Run the graph with given (or default) --result* and --feed-* options""")
-  parser.add_argument("--run-result-pattern", type=str, default="^(${package}/Main)/outputs/(.*)$",
+  parser.add_argument("--run-result-pattern", metavar='PATTERN', type=str, default="^(${package}/Main)/outputs/(.*)$",
                       help="""Pattern to discover run results.""")
   parser.add_argument("--result-binary", default=False, action='store_const', const=True,
                       help="""Whether or not to result in binary.""")
-  parser.add_argument("--result", type=str, default="/dev/stdout")
+  parser.add_argument("--result", metavar='FILE', type=str, default="/dev/stdout")
 
   parser.add_argument("--test", default=False, action='store_const', const=True,
                       help="""Run the tests graphs with given (or default) --test-* options""")
-  parser.add_argument("--test-result-pattern", type=str, default="^(${package}/Test[^/]*)/outputs/(.*)$",
+  parser.add_argument("--test-result-pattern", metavar='PATTERN', type=str, default="^(${package}/Test[^/]*)/outputs/(.*)$",
                       help="""Pattern to discover test graph results.""")
 
   parser.add_argument("--repl", default=False, action='store_const', const=True,
                       help="""Start REPL""")
 
-  parser.add_argument("--tensorboard", nargs='?', default="",
-                      help="""Start tensorboard server on the given IP:PORT, with the given --log-root or --log-dir""")
+  parser.add_argument("--tensorboard", nargs='?', default="", metavar="IP:PORT",
+                      help="""Start tensorboard server on the given address, with the given --log-root or --log-dir""")
 
-  parser.add_argument("--jupyter-kernel", nargs='?', default="",
+  parser.add_argument("--jupyter-kernel", nargs='?', default="", metavar="CONFIG_FILE",
                       help="""Start Jupyter kernel with the given configuration file""")
 
   parser.add_argument("--train", default=False, action='store_const', const=True,
                       help="""Run train graphs with given (or default) --train-* options""")
-  parser.add_argument("--train-result-pattern", type=str, default="^(${package}/Train[^/]*)/outputs/(.*)$",
+  parser.add_argument("--train-result-pattern", metavar='PATTERN', type=str, default="^(${package}/Train[^/]*)/outputs/(.*)$",
                       help="""Pattern to discover train graph results.""")
 
-  parser.add_argument("--input-json", type=str,
+  parser.add_argument("--input-json", metavar='FILE', type=str,
                       help="""JSON file to load.""")
 
-  parser.add_argument("--workspace", type=str,
+  parser.add_argument("--workspace", metavar='DIR', type=str,
                       help="""Default value for workspace""")
-  parser.add_argument("--log-root", type=str,
+  parser.add_argument("--log-root", metavar='DIR', type=str,
                       help="""Which directory to calculate default log dir from.""")
-  parser.add_argument("--log-dir", type=str,
+  parser.add_argument("--log-dir", metavar='DIR', type=str,
                       help="""Which directory to put logs in.""")
 
   parser.add_argument("--output", default=False, action='store_const', const=True,
                       help="""Output graph""")
-  parser.add_argument("--output-root", type=str,
+  parser.add_argument("--output-root", metavar='DIR', type=str,
                       help="""When automatically constructing output path, use this as base""")
-  parser.add_argument("--output-name", type=str,
+  parser.add_argument("--output-name", metavar='NAME', type=str,
                       help="""Base name to use for output file name. Defaults to ${package} if there's only one.""")
-  parser.add_argument("--output-result-pattern", type=str, default="^(${package}/[^/]*)(/outputs/[^/]*)?$",
+  parser.add_argument("--output-result-pattern", metavar='PATTERN', type=str, default="^(${package}/[^/]*)(/outputs/[^/]*)?$",
                       help="""Pattern to discover outputs of graph to output.""")
-  parser.add_argument("--output-format", type=str, default="metagraph",
+  parser.add_argument("--output-format", metavar='FORMAT', type=str, default="metagraph",
                       help="""Defaults to metagraph""")
   parser.add_argument("--output-binary", default=False, action='store_const', const=True,
                       help="""Whether or not to output in binary.""")
-  parser.add_argument("--output-file", type=str,
+  parser.add_argument("--output-file", metavar='FILE', type=str,
                       help="""Path to write output to. Defaults to ${output-name}.${output-format}""")
 
   FLAGS = parser.parse_args()
 
   if FLAGS.reopen_stderr:
-    stderr_file = open(FLAGS.reopen_stderr, 'a')
     os.close(sys.stderr.fileno())
-    os.dup2(stderr_file.fileno(), sys.stderr.fileno())
+    os.dup2(FLAGS.reopen_stderr.fileno(), sys.stderr.fileno())
 
   if FLAGS.reopen_stdout:
-    stdout_file = open(FLAGS.reopen_stdout, 'a')
     os.close(sys.stdout.fileno())
-    os.dup2(stdout_file.fileno(), sys.stdout.fileno())
-
+    os.dup2(FLAGS.reopen_stdout.fileno(), sys.stdout.fileno())
 
   package_names = FLAGS.package_names
 
