@@ -115,7 +115,7 @@ def main():
   parser.add_argument("--input-json", type=str,
                       help="""JSON file to load.""")
 
-  parser.add_argument("--workspace",
+  parser.add_argument("--workspace", type=str,
                       help="""Default value for workspace""")
   parser.add_argument("--log-root", type=str,
                       help="""Which directory to calculate default log dir from.""")
@@ -252,7 +252,7 @@ def main():
       tb_port = int(tb_port)
 
     from nao import tensorboard_server
-    exit(tensorboard_server.main(tb_logdir, tb_host=tb_host, tb_port=tb_port))
+    sys.exit(tensorboard_server.main(tb_logdir, tb_host=tb_host, tb_port=tb_port))
 
   if FLAGS.jupyter_kernel != "":
     jupyter_config_file = FLAGS.jupyter_kernel
@@ -262,6 +262,7 @@ def main():
       eprint("Reading jupyter_config file '%s'..." % jupyter_config_file)
       jupyter_config = json.loads("".join(open(jupyter_config_file).readlines()))
     else:
+      import uuid
       jupyter_config = {
         'control_port'      : 0,
         'hb_port'           : 0,
@@ -277,7 +278,7 @@ def main():
     pallet_parser = source_parser.PalletParser(FLAGS.root, FLAGS.output_root)
     repl_session = graph_repl.ReplSession(pallet_parser)
     driver = jupyter_kernel_driver.Driver(repl_session)
-    exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
+    sys.exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
 
   def log_dir_fn(pkg_names):
     if FLAGS.log_dir:
