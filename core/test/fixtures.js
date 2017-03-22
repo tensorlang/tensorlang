@@ -74,8 +74,15 @@ testCases.forEach(
         }
       }
 
+      var cmd = process.env['NAO'];
+      if (!cmd) {
+        t.fail("NAO must be specified.");
+        t.end();
+        return;
+      }
+
       spawnProcess.withStdinCapturingStdout(
-        `${__dirname}/../bin/nao`,
+        cmd,
         [
           "--source", tc.source,
           ...additionalArgs,

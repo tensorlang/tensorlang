@@ -12,7 +12,7 @@
   },
   "dependencies": {},
   "scripts": {
-    "test": "babel-node tests/fixtures | faucet"
+    "test": "env NAO=../build/exe.macosx-10.6-x86_64-3.5/bin/nao babel-node ./fixtures | faucet"
   },
   "babel": {
     "plugins": [
