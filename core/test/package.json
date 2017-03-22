@@ -1,0 +1,22 @@
+{
+  "devDependencies": {
+    "babel-cli": "^6.24.0",
+    "babel-plugin-transform-flow-strip-types": "^6.22.0",
+    "faucet": "^0.0.1",
+    "flow": "^0.2.3",
+    "flow-bin": "^0.37.4",
+    "flow-typed": "^2.0.0",
+    "tape": "^4.6.3",
+    "tape-catch": "^1.0.6",
+    "tmp": "^0.0.31"
+  },
+  "dependencies": {},
+  "scripts": {
+    "test": "babel-node tests/fixtures | faucet"
+  },
+  "babel": {
+    "plugins": [
+      "transform-flow-strip-types"
+    ]
+  }
+}

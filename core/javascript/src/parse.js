@@ -721,3 +721,6 @@ var parseExpressions = function(source: string) {
   return semantics(m).asJson;
 }
 
+module.exports = {
+  parseExpressions: parseExpressions
+};

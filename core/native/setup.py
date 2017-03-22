@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import sys
 
@@ -60,4 +62,9 @@ setup(
         ]
       }
     },
-    executables=[Executable("./nao__init__.py", base=base, targetName="nao")])
+    executables=[
+      Executable(
+          "%s/nao__init__.py" % os.path.dirname(__file__),
+          base=base,
+          targetName="nao")
+    ])

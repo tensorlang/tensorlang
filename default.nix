@@ -5,8 +5,10 @@ stdenv.mkDerivation rec {
   buildInputs = [
     nodejs-7_x
     yarn
+    ncurses
     python3
     python3Packages.wheel
+    python3Packages.virtualenv
     python3Packages.pex
   ];
 }

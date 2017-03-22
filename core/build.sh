@@ -11,8 +11,6 @@ fi
 rm -rf build dist
 mkdir -p build dist
 
-PIP_CACHE=$PWD/.pex-build
-
 # Set up virtualenv to work within
 VENV=$PWD/build/venv
 virtualenv --never-download $VENV
@@ -24,31 +22,36 @@ export NIX_LDFLAGS=$(echo $NIX_LDFLAGS | sed -E 's/-rpath [^ ]+//')
 $VENV/bin/pip3 install \
     --no-cache-dir \
     --no-index \
-    ./tools/cx_Freeze-5.0.1
+    $PWD/native/vendor/cx_Freeze-5.0.1
 
 # Install nao
 # Generate JavaScript parser file
-mkdir -p gen/nao_parser
-env OUTDIR=gen/nao_parser yarn run build-parser
-touch gen/nao_parser/__init__.py
+export GEN_NAO_PARSER=$PWD/python/gen/nao_parser/parse.js
+mkdir -p $(dirname $GEN_NAO_PARSER)
+cd $PWD/javascript
+yarn run build-parser
+cd -
+touch $(dirname $GEN_NAO_PARSER)/__init__.py
 
+PIP_CACHE=$PWD/python/vendor/cache
 $VENV/bin/pip3 install \
     --find-links $PIP_CACHE \
     --no-cache-dir \
     --no-index \
-    .
+    $PWD/python
 
+PYTHON_NS=python3.5
 # HACK(adamb) Hard code the proper extension name for py_mini_racer
-PY_MINI_RACER_DIR=$VENV/lib/python3.5/site-packages/py_mini_racer
+PY_MINI_RACER_DIR=$VENV/lib/$PYTHON_NS/site-packages/py_mini_racer
 PY_MINI_RACER_EXT=$(basename $(ls $PY_MINI_RACER_DIR/_v8.*.so | head -n 1))
 PY_MINI_RACER_PY=$PY_MINI_RACER_DIR/py_mini_racer.py
 sed -i.bak -e "s!EXTENSION_NAME = .*!EXTENSION_NAME = '$PY_MINI_RACER_EXT'!" $PY_MINI_RACER_PY
 rm $PY_MINI_RACER_PY.bak
 
 # HACK(adamb) Fix missing module message for google.protobuf
-touch $VENV/lib/python3.5/site-packages/google/__init__.py
+touch $VENV/lib/$PYTHON_NS/site-packages/google/__init__.py
 
-cat <<EOF > $VENV/lib/python3.5/site-packages/tensorflow/contrib/util/loader.py
+cat <<EOF > $VENV/lib/$PYTHON_NS/site-packages/tensorflow/contrib/util/loader.py
 """Utilities for loading op libraries.
 
 @@load_op_library
@@ -78,7 +81,7 @@ def load_op_library(path):
   return None
 EOF
 
-$VENV/bin/python ./setup_cx_freeze.py build
+$VENV/bin/python ./native/setup.py build
 
 OLD_LIBSYSTEM=/nix/store/jbilg3n3iwwggf0ca7zfjgbhgwmzwc2s-Libsystem-osx-10.11.6/lib/libSystem.B.dylib
 OLD_CORE_FOUNDATION=/nix/store/6pqkka39jnvc72yifpsbpdm6wqymfwqf-CF-osx-10.9.5/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation
