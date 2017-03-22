@@ -2,6 +2,8 @@
 
 import os
 import sys
+import glob
+import importlib
 
 from cx_Freeze import setup, Executable
 
@@ -10,6 +12,10 @@ _version = os.getenv('BUILD_COUNTER', '9')
 base = None
 if sys.platform == "win32":
   base = "Win32GUI"
+
+# Need to copy all external files too.
+external_dir = os.path.dirname(importlib.util.find_spec('external').origin)
+external_resources = [f for f in glob.glob(os.path.join(external_dir, '*')) if f != '__init__.py' and f != '__pycache__']
 
 setup(
     name="nao",
@@ -55,6 +61,9 @@ setup(
           "tensorflow.contrib.ffmpeg.ffmpeg",
           "tensorflow.contrib.tensor_forest.hybrid.python.ops._training_ops",
           "tensorflow"
+        ],
+        "include_files": [
+          *[(d, os.path.join("lib", "python3.5", "external", os.path.basename(d))) for d in external_resources]
         ],
         "packages": [
           "nao",
