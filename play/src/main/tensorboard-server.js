@@ -1,16 +1,15 @@
 /* @flow */
 "use strict";
 
-const spawn = require('child_process').spawn;
-const process = require('process');
-
-const net = require('net');
+import { spawn } from 'child_process';
+import { env, stdout, stderr } from 'process';
+import { Socket, createServer } from 'net';
 
 // attemptConnect returns a Promise that resolves to true if a TCP connection
 // could be made, false otherwise.
 function attemptConnect(host, port) {
   return new Promise((resolve) => {
-    var client = new net.Socket();
+    var client = new Socket();
     client.connect(port, host, function() {
       resolve(true);
       client.destroy();
@@ -43,7 +42,7 @@ function awaitReady(host, port, retryDelay) {
 // selectPort returns a promise that resolves to a recently free port.
 function selectPort() {
   return new Promise((resolve, reject) => {
-    var server = net.createServer();
+    var server = createServer();
     server.on('listening', function() {
       const port = server.address().port;
       console.log('listening', port);
@@ -57,7 +56,7 @@ function selectPort() {
   });
 }
 
-class Server {
+export class Server {
   constructor(baseArgs) {
     this._baseArgs = baseArgs;
   }
@@ -68,22 +67,27 @@ class Server {
       args.concat(this._baseArgs);
     }
 
-    var nao = process.env["NAO"];
+    var nao = env["NAO"];
     if (!nao) {
-      nao = `${__dirname}/../../core/build/exe.macosx-10.6-x86_64-3.5/bin/nao`;
+      nao = `${__dirname}/../../../core/build/exe.macosx-10.6-x86_64-3.5/bin/nao`;
     }
-    const env = {
-      "PYTHONUNBUFFERED": "1",
-    };
 
     return selectPort()
     .then((port) => {
       const host = "127.0.0.1";
       args.push("--tensorboard", `${host}:${port}`);
 
-      this._process = spawn(nao, args, {env: env});
-      this._process.stdout.pipe(process.stdout);
-      this._process.stderr.pipe(process.stderr);
+      this._process = spawn(
+        nao,
+        args,
+        {
+          env: {
+            "PYTHONUNBUFFERED": "1",
+          }
+        }
+      );
+      this._process.stdout.pipe(stdout);
+      this._process.stderr.pipe(stderr);
 
       return awaitReady(host, port, 250).then(() => `http://${host}:${port}`);
     });
@@ -93,13 +97,3 @@ class Server {
     this._process.kill();
   }
 }
-
-Server.forLogDir = function(logDir) {
-  return new Server(["--log-dir", logDir]);
-}
-
-Server.forWorkspace = function(workspaceDir) {
-  return new Server(["--workspace", workspaceDir]);
-}
-
-module.exports = Server;

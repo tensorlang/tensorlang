@@ -31,9 +31,8 @@ node_modules
 .ipynb_checkpoints
 
 # Ignore compiled output
-/gen/
 dist/
-
+docs/
 test/*.ipynb
 
 bin/nteract-env

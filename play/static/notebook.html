@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="../node_modules/normalize.css/normalize.css"/>
+    <link rel="stylesheet" href="../node_modules/codemirror/lib/codemirror.css"/>
+    <link rel="stylesheet" href="../node_modules/codemirror/addon/hint/show-hint.css"/>
+    <link rel="stylesheet" href="../node_modules/codemirror/addon/dialog/dialog.css"/>
+    <link rel="stylesheet" href="../node_modules/nteract-assets/fonts/source-sans-pro/source-sans-pro.css"/>
+    <link rel="stylesheet" href="../node_modules/nteract-assets/fonts/source-code-pro/source-code-pro.css"/>
+    <link rel="stylesheet" href="../node_modules/nteract-assets/fonts/octicons/octicons.css"/>
+    <script type="text/javascript" src="../node_modules/mathjax-electron/resources/MathJax/MathJax.js?delayStartupUntil=configured"></script>
+    <script type="text/javascript">
+      MathJax.Hub.Config({
+        jax: ["input/TeX", "output/SVG"],
+        extensions: ["tex2jax.js"],
+        messageStyle: "none",
+        showMathMenu: false,
+        tex2jax: {
+          inlineMath: [
+            ['$', '$'],
+            ["\\(", "\\)"]
+          ],
+          displayMath: [
+            ['$$', '$$'],
+            ["\\[", "\\]"]
+          ],
+          processEscapes: true,
+          processEnvironments: true,
+          preview: "none"
+        },
+        TeX: {
+          extensions: ["AMSmath.js", "AMSsymbols.js", "noErrors.js", "noUndefined.js"]
+        },
+        SVG: {
+          font: "STIX-Web"
+        }
+      });
+    MathJax.Hub.Configured();
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      Loading...
+    </div>
+    <script>
+      window.onload = function deferredLoad() {
+        // Force production by default for the sake of packaging
+        process.env.NODE_ENV = 'production';
+
+        try {
+          require('../lib/webpacked-notebook');
+        } catch(err) {
+          const el = document.querySelector('body');
+          el.innerHTML = '';
+
+          const headerEl = document.createElement('h3');
+          const msgContainer = document.createElement('div');
+
+          headerEl.textContent = err.message;
+
+          console.error(err);
+
+          switch(err.code) {
+            case 'MODULE_NOT_FOUND':
+              const msgEl = document.createElement('pre');
+              msgEl.textContent = 'Do you need to npm install any new packages?';
+              msgContainer.appendChild(msgEl);
+              break;
+            default:
+              if(/Module version mismatch/.test(err.message)) {
+                msgContainer.innerHTML = `<p>nteract's native modules mismatch, try running <a href="https://github.com/nteract/nteract#troubleshooting"><pre>npm install</pre></a> from the root of the git clone</p>`;
+              }
+          }
+          el.appendChild(headerEl);
+          el.appendChild(msgContainer);
+          console.dir(err);
+        }
+      };
+    </script>
+  </body>
+</html>

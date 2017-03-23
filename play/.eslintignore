@@ -1,0 +1,8 @@
+dist/
+bin/
+gen/
+static/
+flow-typed/
+build/
+example-notebooks/
+packages/**/node_modules

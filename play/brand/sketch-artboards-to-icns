@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -e
+
+# Compute absolute path to sketch source
+SKETCH_SRC=$(cd $(dirname $1); pwd)/$(basename $1)
+SCRATCH_DIR=$2
+shift 2
+
+mkdir -p $SCRATCH_DIR
+cd $SCRATCH_DIR
+echo >&2 "Exporting artboards from $(basename $SKETCH_SRC)..."
+sketchtool export artboards $SKETCH_SRC
+
+# Resize if the target file doesn't exist yet
+lazy_resize() {
+  src=$1
+  width=$2
+  height=$3
+  dst=$4
+
+  if [ -n $dst ]; then
+    echo >&2 "Resizing $src to generate $dst..."
+    sips -z $width $height $src --out $dst > /dev/null
+  fi
+}
+
+make_icns() {
+  icns_dst=$1
+  iconset_dir=${icns_dst/%.icns/.iconset}
+
+  base=$(basename $iconset_dir .iconset)
+
+  # Move all icons that start with basename of the target iconset_dir.
+  mkdir $iconset_dir
+  for existing in $(ls ${base}_*.png); do
+    mv $existing $iconset_dir/${existing/#${base}_/icon_}
+  done
+
+  cd $iconset_dir
+  base_png=icon_512x512@2x.png
+  lazy_resize $base_png 16 16 icon_16x16.png
+  lazy_resize $base_png 32 32 icon_16x16@2x.png
+  lazy_resize $base_png 32 32 icon_32x32.png
+  lazy_resize $base_png 64 64 icon_32x32@2x.png
+  lazy_resize $base_png 128 128 icon_128x128.png
+  lazy_resize $base_png 256 256 icon_128x128@2x.png
+  lazy_resize $base_png 256 256 icon_256x256.png
+  lazy_resize $base_png 512 512 icon_256x256@2x.png
+  lazy_resize $base_png 512 512 icon_512x512.png
+  cd - > /dev/null
+
+  echo >&2 "Generating $(basename $icns_dst)..."
+  iconutil -c icns $iconset_dir
+  rm -R $iconset_dir
+}
+
+# Assume remaining arguments are names of .icns files to generate.
+while [ $# -gt 0 ]; do
+  icns_dst=$1
+  shift
+
+  make_icns $icns_dst
+done

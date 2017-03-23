@@ -1,2 +1,12 @@
+[libs]
+flow-typed
+types
+
+[options]
+module.ignore_non_literal_requires=true
+
 [ignore]
-<PROJECT_ROOT>/vendor/*
+node_modules/
+dist/
+.*static/*
+.*test/*
