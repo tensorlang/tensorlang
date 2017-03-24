@@ -4,6 +4,7 @@ import { dialog, app, shell, Menu, ipcMain as ipc,
 import * as path from 'path';
 import { launchNotebookFromFile, launchNewNotebook } from './notebook-window';
 import { openTensorBoard } from './tensorboard-window';
+import { launchDocumentation } from './documentation-window';
 import { launchTraceViewerForFile } from './trace-viewer-window';
 import { installShellCommand } from './cli';
 
@@ -378,20 +379,30 @@ export const help = {
   role: 'help',
   submenu: [
     {
-      label: 'Learn More',
-      click: () => { shell.openExternal('http://github.com/ajbouh/nao'); }
+      label: 'Open Documentation',
+      click: () => { launchDocumentation(); }
+    },
+    {
+      label: '&Open Example Notebook',
+      click: launchNotebookFromFile.bind(null, path.join(exampleNotebooksDirectory, 'intro.ipynb')),
     },
     {
       type: 'separator',
     },
     {
-      label: '&Open Example Notebook',
-      submenu: [
-        {
-          label: '&Intro',
-          click: launchNotebookFromFile.bind(null, path.join(exampleNotebooksDirectory, 'intro.ipynb')),
-        }
-      ]
+      label: 'Report Issue',
+      click: () => { shell.openExternal('https://github.com/ajbouh/nao/issues/new'); }
+    },
+    {
+      label: 'Search Issues',
+      click: () => { shell.openExternal('https://github.com/ajbouh/nao/issues/'); }
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: 'Nao Home',
+      click: () => { shell.openExternal('https://github.com/ajbouh/nao'); }
     },
   ]
 };
