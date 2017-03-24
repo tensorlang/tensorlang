@@ -35,7 +35,7 @@ const file = {
   submenu: [
     {
       label: `&New Notebook`,
-      click: () => launchNewNotebook(kernelSpec),
+      click: () => launchNewNotebook(),
       accelerator: 'CmdOrCtrl+N',
     },
     {
@@ -444,21 +444,6 @@ export const named = {
       click: () => app.quit(),
     },
   ],
-};
-
-const kernelSpec = {
-  name: 'nao',
-  spec: {
-    argv: [
-      "/Users/adamb/github/ajbouh/nao/core/build/exe.macosx-10.6-x86_64-3.5/bin/nao",
-      "--reopen-stderr", "/Users/adamb/debug.log",
-      "--reopen-stdout", "/Users/adamb/debug.log",
-      "--jupyter-kernel",
-      '{connection_file}'
-    ],
-    display_name: 'Nao',
-    language: 'nao'
-  }
 };
 
 const template = [];

@@ -82,7 +82,7 @@ openFile$
     // based on if arguments went through argv or through open-file events
     if (notebooks.length <= 0 && buffer.length <= 0) {
       log.info('launching an empty notebook by default. Actually, not doing that.');
-      launchNotebookFromFile();
+      launchNewNotebook();
     } else {
       notebooks
         .forEach((f) => {
