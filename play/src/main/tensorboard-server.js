@@ -64,7 +64,7 @@ export class Server {
   start() {
     const args = [];
     if (this._baseArgs) {
-      args.concat(this._baseArgs);
+      args.push(...this._baseArgs);
     }
 
     var nao = env["NAO"];
