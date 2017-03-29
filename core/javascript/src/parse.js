@@ -3,6 +3,8 @@
 const ohm = require('ohm-js');
 const grammarText = require('./nao.ohm');
 
+// import ohm from 'ohm-js';
+// import grammarText from './nao.ohm';
 
 function loadGrammar() {
   return ohm.grammar(grammarText);
@@ -53,6 +55,7 @@ function reduceOperandList(expr: any[][], opToTfMethod: { [key: string]: string 
 
 function processFunctionBodyExpr(upvalNames: string[], retvals: any[], isMacro: bool, expr) {
   if (expr[0] === "__retval") {
+    // console.warn('processFunctionBodyExpr', JSON.stringify(expr));
     var [_, retName, retVal: any[]] = expr;
     var subName = expressionName(retVal);
     if (!subName) {
@@ -239,7 +242,9 @@ function rewriteExpressionWithShape(shape: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (shape) {
+      // console.warn("rewriting ", JSON.stringify(expr));
       expr[2] = shape;
+      // console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -287,7 +292,9 @@ function rewriteExpressionWithType(type: any[], expr: any[]): any[] {
 
   case "_named_tensor":
     if (type) {
+      // console.warn("rewriting ", JSON.stringify(expr));
       expr[3] = type;
+      // console.warn("to ", JSON.stringify(expr));
     }
     break;
   default:
@@ -363,6 +370,9 @@ function createSemantics(grammar) {
           var pathFragments = (scope || path).split("/");
           name = pathFragments[pathFragments.length - 1];
         }
+        // console.warn("name", name)
+        // console.warn("path", path)
+        // console.warn("scope", scope)
         return [name, path, scope];
       },
       _terminal: function() { return this.sourceString; },
@@ -512,6 +522,7 @@ function createSemantics(grammar) {
         return ["_sf_cond", cond.asJson, thenClause.asJson, elseClause.asJson];
       },
       ForExpression: function(_1, _2, initializers, condition, body) {
+        // console.warn('ForExpression', JSON.stringify(initializers.asJson), JSON.stringify(body.asJson));
         var retvals = [];
         var upvalNames = [];
         var bodyExprs = body.asJson.map(processFunctionBodyExpr.bind(null, upvalNames, retvals, false));
@@ -721,6 +732,9 @@ var parseExpressions = function(source: string) {
   return semantics(m).asJson;
 }
 
+// export default {
+//   parseExpressions: parseExpressions
+// };
 module.exports = {
   parseExpressions: parseExpressions
 };

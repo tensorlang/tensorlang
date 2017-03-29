@@ -309,92 +309,6 @@ class PrimitiveFunction:
 
     return ctx.call(self._fn, args, attrs)
 
-class SyntheticFunction:
-  def __init__(self, name, argnames, retnames, base_input_map, metagraphdef):
-    self._nam = name
-    self._argnames = argnames
-    self._retnames = retnames
-    self._base_input_map = base_input_map
-    # self._var_scope = None
-    # self._vardefs = vardefs
-    self._metagraphdef = metagraphdef
-    # self._did_import_vars = False
-    # self._imported_vars = None
-    # self._var_init = None
-
-  # def _lazy_var_init(self):
-  #   self._lazy_define_vars()
-  #   return self._var_init
-  #
-  # def _lazy_define_vars(self):
-  #   if not self._did_import_vars:
-  #     self._imported_vars = self._do_import_vars()
-  #     self._var_init = tf.group(self._imported_vars.values)
-  #     self._did_import_vars = True
-  #
-  #   return self._imported_vars
-  #
-  # def _do_import_vars(self):
-  #   m = {}
-  #   for vardef in self._vardefs:
-  #     eprint("defining var", vardef)
-  #     m[vardef.name] = tf.Variable(variable_def=vardef, import_scope=self._var_scope)
-  #
-  #   return m
-
-  def _name(self):
-    return self._nam
-
-  def _input_map(self, existing):
-    existing = dict(existing)
-    existing.update(self._base_input_map)
-    return existing
-    # varmap = self._lazy_define_vars()
-    #
-    # if len(varmap) == 0:
-    #   return existing
-    #
-    # existing = dict(existing)
-    # existing.update(varmap)
-    # return existing
-
-  def _do_apply(self, scope_name, arg_dict):
-    # scope = tf.variable_scope(scope_name)
-    # scope_name = tf.get_default_graph().unique_name(scope_name)
-    scope_name = "main/testMnistFormat/_/while/retval0"
-    # with tf.variable_scope(root_scope):
-    g = tf.get_default_graph()
-    with tf.name_scope(None):
-      # with tf.name_scope("synth") as scope:
-      eprint('_do_apply', scope_name, arg_dict)
-      var_list = None
-      try:
-        var_list = tf.train.import_meta_graph(
-          self._metagraphdef,
-          import_scope=scope_name,
-          input_map=arg_dict)
-      except KeyError as e:
-        nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
-        nodes.sort()
-        eprint('error, but got nodes', nodes)
-        raise e
-      except ValueError as ve:
-        eprint('error, but tried to import', self._metagraphdef)
-        raise ve
-      # eprint('apply_kw var_list', var_list)
-
-    retvals = [g.get_tensor_by_name("%s/%s" % (scope_name, n)) for n in self._retnames]
-
-    return RetvalBag(dict(zip(self._retnames, retvals)))
-
-  def apply_kw(self, visitor, ctx, scope_name, attrs, kwargs):
-    return self._do_apply(scope_name, self._input_map(kwargs))
-
-  # TODO(adamb) Support attrs for synthetic functions!
-  def apply(self, visitor, ctx, scope_name, attrs, args):
-    return self._do_apply(scope_name, self._input_map(dict(zip(self._argnames, args))))
-
-
 # HACK(adamb) We need to be able to pass in our own custom instances of
 
 from tensorflow.python.training import optimizer
@@ -621,42 +535,46 @@ class DeclaredFunction:
   def apply_partial():
     pass
 
-  def _do_apply(self, visitor, ctx, name, attrs, bind_args):
+  def _do_apply(self, visitor, ctx, scope_name, attrs, bind_args):
     returned = {}
     new_ctx = ctx.duplicate_for(self._ctx)
     if attrs != None:
-      for name, value in attrs.items():
-        new_ctx.define_attr(name, value)
+      for n, v in attrs.items():
+        new_ctx.define_attr(n, v)
 
     g = tf.get_default_graph()
-    scope_name = g.unique_name(self._name() or 'func', False).split("/")[-1]
-    with tf.variable_scope(scope_name):
-      # preload locals with references to input operations
-      bind_args(new_ctx)
 
-      # Need to visit expressions
+    # preload locals with references to input operations
+    bind_args(new_ctx)
+
+    if scope_name:
+      with tf.variable_scope(scope_name):
+        # Need to visit expressions
+        visitor._visit_exprs(new_ctx, self._body())
+    else:
       visitor._visit_exprs(new_ctx, self._body())
 
     for retval_name, retval_argname in self._retval_specs():
       returned[retval_name] = new_ctx.get_local(retval_argname)
 
-    rb = RetvalBag(returned)
-    # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
-    if name and len(returned) == 1:
-      tf.identity(rb.get(None), name=name)
+    result = RetvalBag(returned)
+    # if name:
+    #   # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
+    #   if len(returned) == 1:
+    #     result = tf.identity(result.get(None), name=name)
 
-    return rb
+    return result
 
-  def apply_kw(self, visitor, ctx, name, attrs, kwargs):
+  def apply_kw(self, visitor, ctx, scope_name, attrs, kwargs):
     def bind_args_by_name(new_ctx):
       for arg_name, arg in kwargs.items():
         new_ctx.define_local(arg_name, arg)
 
-    return self._do_apply(visitor, ctx, name, attrs, bind_args_by_name)
+    return self._do_apply(visitor, ctx, scope_name, attrs, bind_args_by_name)
 
-  def apply(self, visitor, ctx, name, attrs, args):
+  def apply(self, visitor, ctx, scope_name, attrs, args):
     def bind_args_by_pos(new_ctx):
       for arg_name, arg in zip(self._arg_names(), args):
         new_ctx.define_local(arg_name, arg)
 
-    return self._do_apply(visitor, ctx, name, attrs, bind_args_by_pos)
+    return self._do_apply(visitor, ctx, scope_name, attrs, bind_args_by_pos)

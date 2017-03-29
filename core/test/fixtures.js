@@ -8,6 +8,7 @@ const path = require('path');
 const spawnProcess = require('./util/spawnProcess');
 
 const testCases = [
+  // require('./fixtures/imports')[0],
   ...require('./fixtures/imports'),
   ...require('./fixtures/simple'),
   ...require('./fixtures/loop'),

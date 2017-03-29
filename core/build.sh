@@ -5,81 +5,82 @@ export SOURCE_DATE_EPOCH=315561601
 
 cd $(dirname $0)
 
-if [ -e build ]; then
-  chmod +w -R build
-fi
-rm -rf build dist
-mkdir -p build dist
-
-# Set up virtualenv to work within
 VENV=$PWD/build/venv
-virtualenv --never-download $VENV
 
 # Remove spurious rpath from NIX_LDFLAGS.
 export NIX_LDFLAGS=$(echo $NIX_LDFLAGS | sed -E 's/-rpath [^ ]+//')
 
-# Install cx_Freeze
-$VENV/bin/pip3 install \
-    --no-cache-dir \
-    --no-index \
-    $PWD/native/vendor/cx_Freeze-5.0.1
-
-# Install nao
-# Generate JavaScript parser file
-export GEN_NAO_PARSER=$PWD/python/gen/nao_parser/parse.js
-mkdir -p $(dirname $GEN_NAO_PARSER)
-cd $PWD/javascript
-yarn run build-parser
-cd -
-touch $(dirname $GEN_NAO_PARSER)/__init__.py
-
-PIP_CACHE=$PWD/python/vendor/cache
-$VENV/bin/pip3 install \
-    --find-links $PIP_CACHE \
-    --no-cache-dir \
-    --no-index \
-    $PWD/python
-
-PYTHON_NS=python3.5
-# HACK(adamb) Hard code the proper extension name for py_mini_racer
-PY_MINI_RACER_DIR=$VENV/lib/$PYTHON_NS/site-packages/py_mini_racer
-PY_MINI_RACER_EXT=$(basename $(ls $PY_MINI_RACER_DIR/_v8.*.so | head -n 1))
-PY_MINI_RACER_PY=$PY_MINI_RACER_DIR/py_mini_racer.py
-sed -i.bak -e "s!EXTENSION_NAME = .*!EXTENSION_NAME = '$PY_MINI_RACER_EXT'!" $PY_MINI_RACER_PY
-rm $PY_MINI_RACER_PY.bak
-
-# HACK(adamb) Fix missing module message for google.protobuf
-touch $VENV/lib/$PYTHON_NS/site-packages/google/__init__.py
-
-cat <<EOF > $VENV/lib/$PYTHON_NS/site-packages/tensorflow/contrib/util/loader.py
-"""Utilities for loading op libraries.
-
-@@load_op_library
-"""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import os
-
-from tensorflow.python.framework import load_library
-from tensorflow.python.platform import resource_loader
-
-
-def load_op_library(path):
-  """Loads a contrib op library from the given path.
-
-  NOTE(adamb): Assume that contrib op libraries are statically linked into the main TensorFlow Python
-
-  Args:
-    path: An absolute path to a shared object file.
-
-  Returns:
-    A Python module containing the Python wrappers for Ops defined in the
-    plugin.
-  """
-  return None
-EOF
+# if [ -e build ]; then
+#   chmod +w -R build
+# fi
+# rm -rf build dist
+# mkdir -p build dist
+#
+# # Set up virtualenv to work within
+# virtualenv --never-download $VENV
+#
+# # Install cx_Freeze
+# $VENV/bin/pip3 install \
+#     --no-cache-dir \
+#     --no-index \
+#     $PWD/native/vendor/cx_Freeze-5.0.1
+#
+# # Install nao
+# # Generate JavaScript parser file
+# export GEN_NAO_PARSER=$PWD/python/gen/nao_parser/parse.js
+# mkdir -p $(dirname $GEN_NAO_PARSER)
+# cd $PWD/javascript
+# yarn run build-parser
+# cd -
+# touch $(dirname $GEN_NAO_PARSER)/__init__.py
+#
+# PIP_CACHE=$PWD/python/vendor/cache
+# $VENV/bin/pip3 install \
+#     --find-links $PIP_CACHE \
+#     --no-cache-dir \
+#     --no-index \
+#     $PWD/python
+#
+# PYTHON_NS=python3.5
+# # HACK(adamb) Hard code the proper extension name for py_mini_racer
+# PY_MINI_RACER_DIR=$VENV/lib/$PYTHON_NS/site-packages/py_mini_racer
+# PY_MINI_RACER_EXT=$(basename $(ls $PY_MINI_RACER_DIR/_v8.*.so | head -n 1))
+# PY_MINI_RACER_PY=$PY_MINI_RACER_DIR/py_mini_racer.py
+# sed -i.bak -e "s!EXTENSION_NAME = .*!EXTENSION_NAME = '$PY_MINI_RACER_EXT'!" $PY_MINI_RACER_PY
+# rm $PY_MINI_RACER_PY.bak
+#
+# # HACK(adamb) Fix missing module message for google.protobuf
+# touch $VENV/lib/$PYTHON_NS/site-packages/google/__init__.py
+#
+# cat <<EOF > $VENV/lib/$PYTHON_NS/site-packages/tensorflow/contrib/util/loader.py
+# """Utilities for loading op libraries.
+#
+# @@load_op_library
+# """
+# from __future__ import absolute_import
+# from __future__ import division
+# from __future__ import print_function
+#
+# import os
+#
+# from tensorflow.python.framework import load_library
+# from tensorflow.python.platform import resource_loader
+#
+#
+# def load_op_library(path):
+#   """Loads a contrib op library from the given path.
+#
+#   NOTE(adamb): Assume that contrib op libraries are statically linked into the main TensorFlow Python
+#
+#   Args:
+#     path: An absolute path to a shared object file.
+#
+#   Returns:
+#     A Python module containing the Python wrappers for Ops defined in the
+#     plugin.
+#   """
+#   return None
+# EOF
 
 $VENV/bin/python ./native/setup.py build
 

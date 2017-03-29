@@ -1,0 +1,61 @@
+import (
+  log          "log"
+  mnistQueue   "data/mnist/queue"
+
+  digits       "demo/digits:digits"
+  summary      "tensorflow:summary"
+)
+
+func logPredictions(predictions) {
+  predictions
+  tf.argmax(^, 1)
+  tf.to_int32(^)
+  tf.dynamic_partition[
+    num_partitions: 10,
+  ](images, ^) -- partitionedImages
+
+  let step = 12
+
+  summary.image(partitionedImages:0) -- image0s
+  log.LogWithStep(image0s, step)
+  summary.image(partitionedImages:1) -- image1s
+  log.LogWithStep(image1s, step)
+  summary.image(partitionedImages:2) -- image2s
+  log.LogWithStep(image2s, step)
+  summary.image(partitionedImages:3) -- image3s
+  log.LogWithStep(image3s, step)
+  summary.image(partitionedImages:4) -- image4s
+  log.LogWithStep(image4s, step)
+  summary.image(partitionedImages:5) -- image5s
+  log.LogWithStep(image5s, step)
+  summary.image(partitionedImages:6) -- image6s
+  log.LogWithStep(image6s, step)
+  summary.image(partitionedImages:7) -- image7s
+  log.LogWithStep(image7s, step)
+  summary.image(partitionedImages:8) -- image8s
+  log.LogWithStep(image8s, step)
+  summary.image(partitionedImages:9) -- image9s
+  log.LogWithStep(image9s, step)
+}
+
+func Main() {
+  let qRef = mnistQueue.ForTesting()
+
+  let batchSize = 100
+
+  let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
+  let labels = v:0
+  tf.reshape(v:1, [-1, 28, 28, 1]) -- images
+
+  digits.Classify(^) -- predictions
+  logPredictions(^)
+
+  // Now log accuracy!
+  tf.argmax(predictions, 1) == tf.argmax(labels, 1) -- correct_prediction
+  tf.reduce_mean(tf.cast(^, tf.float32)) -- x
+  summary.scalar(^) -- accuracy
+  log.LogWithStep(^, step)
+  log.Debug(x)
+
+  ← result = after __leaves { 1 }
+}

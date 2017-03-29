@@ -1,11 +1,11 @@
 #!/bin/bash
 
 set -ex
-export SOURCE_DATE_EPOCH=315532800
+export SOURCE_DATE_EPOCH=315561601
 
 cd $(dirname $0)
 
-rm -r build dist
+rm -rf build dist
 mkdir -p gen/nao_parser build dist
 
 # Generate JavaScript parser file
@@ -45,7 +45,19 @@ install_name_tool -add_rpath $CUDA_HOME/lib $TF_NATIVE_LIB
 install_name_tool -add_rpath $CUDA_HOME/extras/CUPTI/lib $TF_NATIVE_LIB
 
 zip -r ../pex-cache/$(basename $TF_WHL) .
+cd -
 
+mkdir -p build/fix-cxfreeze-pex
+cd build/fix-cxfreeze-pex
+CX_FREEZE_WHL=$(ls ../../.pex-build/cx_Freeze-*.whl | head -n 1)
+unzip $CX_FREEZE_WHL
+
+CX_FREEZE_FREEZER=cx_Freeze/freezer.py
+sed -i.bak -e 's!zipTime = .*$!zipTime = time.localtime(int(os.environ["SOURCE_DATE_EPOCH"]))[:6]!' $CX_FREEZE_FREEZER
+rm $CX_FREEZE_FREEZER.bak
+cat $CX_FREEZE_FREEZER
+
+zip -r ../pex-cache/$(basename $CX_FREEZE_WHL) .
 cd -
 
 # Symlink in any pex files in cache that haven't been patched.
@@ -59,10 +71,17 @@ cd -
 
 # Generate .pex
 pex \
-    -vvvvv \
     --no-index \
-    --script nao \
     --cache-dir build/pex-cache/ \
     -r requirements-transitive.txt \
-    -o dist/nao.pex \
+    -o dist/deps.pex \
+    cx_Freeze==5.0.1 \
     .
+
+# pex \
+#     --no-index \
+#     --script nao \
+#     --cache-dir build/pex-cache/ \
+#     -r requirements-transitive.txt \
+#     -o dist/nao.pex \
+#     .

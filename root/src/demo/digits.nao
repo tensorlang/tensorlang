@@ -1,0 +1,5 @@
+import (
+  lenet5 "models/lenet5"
+)
+
+let Classify = lenet5.New[]

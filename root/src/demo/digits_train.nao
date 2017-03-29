@@ -1,0 +1,53 @@
+import (
+  log           "log"
+  mnistQueue    "data/mnist/queue"
+  digits        "demo/digits"
+  gradDescent   "train/gradient_descent"
+
+  tf            "tensorflow:"
+  tfNn          "tensorflow:nn"
+  summary       "tensorflow:summary"
+)
+
+func loss(prediction float, label double <?,10>, step int32) {
+  tfNn.softmax_cross_entropy_with_logits(logits: ^, labels: label) -- xEntropy
+  tf.reduce_mean(xEntropy)
+  summary.scalar(^) -- crossEntropy
+  log.LogWithStep(^, step)
+
+  tf.argmax(prediction, 1) == tf.argmax(label, 1) -- correct_prediction
+  tf.reduce_mean(tf.cast(^, tf.float32))
+  summary.scalar(^) -- accuracy
+  log.LogWithStep(^, step)
+
+  emit w = after __leaves { tf.reduce_mean(xEntropy) }
+}
+
+func Train() {
+  let trainStep = gradDescent.Step[
+    lossFn: func (d float, l double <?,10>, s int32) {
+      emit e = loss(lenet.Lenet(d), l, s)
+    },
+    learningRate: 0.01,
+  ]
+
+  let qRef = mnistQueue.ForTraining()
+  let maxSteps = 400
+  let f = for let step int32 <> = 0; step < maxSteps {
+    let batchSize = 100
+
+    let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
+
+    let labels = v:0
+    tf.reshape(v:1, [-1, 28, 28, 1]) -- images
+
+    trainStep(images, labels, step) -- reducedMean
+    log.Debug(reducedMean)
+
+    <- step = after __leaves { step + 1 }
+  }
+
+  tf.Assert(f:step == maxSteps, {"f:step == maxSteps"})
+
+  ← result = after __leaves { 1 }
+}

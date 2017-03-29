@@ -1,0 +1,15 @@
+import (
+  tfTrain         "tensorflow:train"
+)
+
+func Step[lossFn, learningRate] {
+  nao.var_transform[
+    fn: lossFn,
+    macro: func [output, trainable] {
+      let opt = tfTrain.GradientDescentOptimizer[learning_rate: learningRate]()
+      opt:minimize[var_list: trainable, loss: output]()
+      emit t = ^
+    },
+  ]()
+  emit e = ^
+}

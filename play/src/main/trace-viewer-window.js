@@ -3,20 +3,6 @@ import path from 'path';
 
 import { shell, BrowserWindow } from 'electron';
 
-export function getPath(url) {
-  const nUrl = url.substring(url.indexOf('static'), path.length);
-  return path.join(__dirname, '..', '..', nUrl.replace('static/', ''));
-}
-
-export function deferURL(event, url) {
-  event.preventDefault();
-  if (!url.startsWith('file:')) {
-    shell.openExternal(url);
-  } else if (url.endsWith('.ipynb')) {
-    launchIpynb(getPath(url));
-  }
-}
-
 const iconPath = path.join(__dirname, '..', '..', 'static', 'icon.png');
 
 const index = path.join(__dirname, '..', '..', 'static', 'trace-viewer.html');

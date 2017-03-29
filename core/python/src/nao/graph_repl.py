@@ -59,7 +59,11 @@ def run(parser):
       src = input("> ")
       if src == "":
         continue
+    except KeyboardInterrupt:
+      print("^C")
+      continue
     except EOFError:
+      print()
       break
 
     print(repl_session.run(src))

@@ -302,10 +302,16 @@ class TopLevel:
     if name != None:
       ctx.define_local(name, result)
 
+      # # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
+      # if len(result) == 1:
+      #   result = tf.identity(result.get(None), name=name)
+      #
+      # ctx.define_local(name, result)
+
     return result
 
   def _named_apply_keywords(self, ctx, name, fn, attrs, kwargs):
-    def keyword_apply(unwrapped_fn, name):
+    def keyword_apply(unwrapped_fn, scope_name):
       unwrapped_kwargs = {}
       for key, value in kwargs.items():
         value = self.__unwrap_bag(value)
@@ -316,14 +322,14 @@ class TopLevel:
     return self.__named_apply_prep(ctx, name, fn, attrs, keyword_apply)
 
   def _named_apply(self, ctx, name, fn, attrs, *args):
-    def positonal_apply(unwrapped_fn, name):
+    def positonal_apply(unwrapped_fn, scope_name):
       unwrapped_args = []
       for arg in args:
         arg = self.__unwrap_bag(arg)
         ctx.eliminate_leaf(arg)
         unwrapped_args.append(arg)
       if hasattr(unwrapped_fn, 'apply'):
-        return unwrapped_fn.apply(self, ctx, name, attrs, unwrapped_args)
+        return unwrapped_fn.apply(self, ctx, scope_name, attrs, unwrapped_args)
       else:
         raise Exception("Can't apply non-function %s with unwrapped args %s" % (unwrapped_fn, unwrapped_args))
     return self.__named_apply_prep(ctx, name, fn, attrs, positonal_apply)
@@ -835,15 +841,16 @@ class TopLevel:
           try:
             try:
               returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
-            except KeyError:
+            except KeyError as ke:
               eprint("repeating lookup of %s in prefix %s for retval %s" % (retval_inner_name, tensor_prefix, retval_name))
               # If we fail to find the tensor above, perhaps it was just an input.
-              returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
-          except KeyError as ke:
-            nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
-            nodes.sort()
-            eprint('error, but got nodes', nodes)
-            raise ke
+              try:
+                returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
+              except KeyError:
+                nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
+                nodes.sort()
+                eprint('error, but got nodes', nodes)
+                raise ke
 
           tf.identity(returned_tensor, name=retval_name)
 
@@ -896,7 +903,7 @@ class TopLevel:
 
   def _visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
-    # eprint("%s%s" % ('  ' * self.nesting_level, expr))
+    eprint("%s%s" % ('  ' * self.nesting_level, expr))
 
     if type(expr) == list:
       expr_type = expr[0]
@@ -907,12 +914,13 @@ class TopLevel:
       if expr_type.startswith("_sf_"): # Special form
         result = attr(ctx, *expr[1:])
       elif expr_type.startswith("_named_"): # name, then expressions
+        eprint("%sctx: %s" % ('  ' * self.nesting_level, ctx))
         result = attr(ctx, expr[1], *[self.visit(ctx, subexpr) for subexpr in expr[2:]])
       else: # just expressions
         result = attr(ctx, *[self.visit(ctx, subexpr) for subexpr in expr[1:]])
 
       # eprint("visited %s expr %s => %s; ctx: %s" % (expr_type, expr, result, ctx))
-      # eprint("%s%s" % ('  ' * self.nesting_level, result))
+      eprint("%s=> %s" % ('  ' * self.nesting_level, result))
       self.nesting_level = self.nesting_level - 1
       return result
     else:

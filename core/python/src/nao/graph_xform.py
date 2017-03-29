@@ -54,6 +54,7 @@ def replace_variable_initializers_with_current_values(graph, vars, value_suffix)
         tf.constant(var_value, name="%s/%s" % (var_op_name, value_suffix)),
         name="%s/Assign%s" % (var_op_name, value_suffix)).op
       var._initializer_op = var_init_op
+      eprint("Resetting initializer for var", var)
 
 def strip_meta_graph(meta_graph_def, node_names, var_names):
   node_names = node_names[:]
@@ -86,5 +87,6 @@ def strip_meta_graph(meta_graph_def, node_names, var_names):
       del wc_values[wc_ix]
 
   graph_def = meta_graph_def.graph_def
+  eprint("only keeping", node_names, "from", [n.name for n in graph_def.node])
   graph_def = graph_util.extract_sub_graph(graph_def, node_names)
   meta_graph_def.graph_def.CopyFrom(graph_def)

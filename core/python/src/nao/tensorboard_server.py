@@ -13,7 +13,7 @@ from tensorflow.tensorboard.backend import server
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
-def main(tb_logdir, tb_host=None, tb_port=None, tb_debug=False, tb_purge_orphaned_data=False, tb_reload_interval=5):
+def main(tb_logdir, tb_host=None, tb_port=None, tb_debug=True, tb_purge_orphaned_data=False, tb_reload_interval=5):
   if tb_host is None:
     tb_host = '127.0.0.1'
 

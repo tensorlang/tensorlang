@@ -39,6 +39,7 @@ class PalletParser:
     self._import_cache = {}
 
   def pallet(self):
+    pp(self._pallet)
     return self._pallet[:]
 
   def put_source(self, import_path, source):
@@ -59,7 +60,6 @@ class PalletParser:
 
     return imported
 
-  # TODO(adamb) Modify to *only* take input via stdin/command-line.
   def _parse_external(self, source):
     expr = self._ctx.call("parse.parseExpressions", source)
     pp(expr)
@@ -104,7 +104,7 @@ class PalletParser:
           source = f.read()
       exprs = self._parse_external(source)
 
-      pkg = ["_sf_package", resolved["imported_package_name"], *exprs]
+      pkg = ["_sf_package", resolved["import_path"], *exprs]
       for import_path, imported_scope in self._enumerate_imports(pkg):
         # Skip imports that provide direct access to TensorFlow internals.
         if import_path == "tensorflow":
@@ -112,7 +112,7 @@ class PalletParser:
 
         self.resolve_import(import_path, imported_scope)
     else:
-      pkg = ["_sf_foreign_package", resolved["language"], resolved["imported_package_name"], resolved["imported_scope_name"], resolved["path"]]
+      pkg = ["_sf_foreign_package", resolved["language"], resolved["import_path"], resolved["imported_scope_name"], resolved["path"]]
 
     self._import_cache[cache_key] = pkg
     self._pallet.append(pkg)

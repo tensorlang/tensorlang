@@ -170,7 +170,7 @@ def main():
   if not FLAGS.workspace:
     FLAGS.workspace = os.environ.get("NAOPATH", "")
     if not FLAGS.workspace:
-      FLAGS.workspace = search_upwards(os.getcwd(), ".naopath")
+      FLAGS.workspace = search_upwards(os.getcwd(), ".naoconfig")
     if not FLAGS.workspace:
       FLAGS.workspace = "."
 
