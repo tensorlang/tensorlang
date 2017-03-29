@@ -5,8 +5,9 @@ NaoRules {
 	ImportDeclarationBody =
 	  | ImportSpec                      -- single
 	  | "(" nl* ImportSpec+ nl* ")" #sc -- multi
-	ImportSpec = PackageName? ImportPath #sc
+	ImportSpec = PackageName? ImportPath ImportTag? #sc
 	PackageName = identifier
+	ImportTag = stringLiteral
 	ImportPath = stringLiteral
 
 	TopLevelDecl = nl*

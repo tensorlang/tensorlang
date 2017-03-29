@@ -10,12 +10,14 @@ def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
 class RetvalBag:
-  def __init__(self, a_dict):
+  def __init__(self, a_dict, fn=None):
     self._d = {}
 
     for k, v in a_dict.items():
       if type(v) == RetvalBag:
         v = v.get(None)
+      if fn:
+        v = fn(v)
       self._d[k] = v
 
   def get(self, key):
@@ -25,6 +27,12 @@ class RetvalBag:
 
   def values(self):
     return self._d.values()
+
+  def wrap(self, fn):
+    return RetvalBag(self._d, fn=fn)
+
+  def len(self):
+    return len(self._d)
 
   def __str__(self):
     return "RetvalBag(%s)" % self._d
@@ -55,7 +63,7 @@ class Package:
     if not n[0].isupper():
       raise Exception("Tried to use non-exported value named: %s" % n)
 
-    if name:
+    if name and isinstance(value, tf.Tensor):
       return tf.identity(value, name=name)
 
     return value
@@ -257,6 +265,9 @@ class PrimitiveFunction:
       else:
         self._name_is_posarg = True
 
+  def _name(self):
+    return self._fn.__name__
+
   def apply_attrs(self, visitor, attrs):
     return PrimitiveFunction(partial(self._fn, **attrs))
 
@@ -391,6 +402,7 @@ class ImportedPythonFunction:
     sig = inspect.signature(fn)
     self._Tout = sig.return_annotation
     self._argnames = sig.parameters.keys()
+    self.__name__ = self._fn.__name__
 
   def __call__(self, *args):
     return tf.py_func(
@@ -547,11 +559,8 @@ class DeclaredFunction:
     # preload locals with references to input operations
     bind_args(new_ctx)
 
-    if scope_name:
-      with tf.variable_scope(scope_name):
-        # Need to visit expressions
-        visitor._visit_exprs(new_ctx, self._body())
-    else:
+    with tf.variable_scope(scope_name):
+      # Need to visit expressions
       visitor._visit_exprs(new_ctx, self._body())
 
     for retval_name, retval_argname in self._retval_specs():

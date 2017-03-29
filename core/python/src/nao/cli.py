@@ -16,13 +16,15 @@ import gc
 
 from os import path
 
-from nao import graph_gen
-from nao import graph_io
-from nao import graph_query
-from nao import graph_xform
-from nao import graph_repl
-from nao import graph_execution
-from nao import parser as source_parser
+from nao.structure import graph_assets
+from nao.compile import graph_gen
+from nao.compile import parser as source_parser
+from nao.structure import graph_io
+from nao.structure import graph_query
+from nao.structure import graph_xform
+from nao.tool import graph_repl
+from nao.run import graph_execution
+from nao.structure import assets as nao_assets
 
 import tensorflow as tf
 from tensorflow.python.framework import meta_graph
@@ -71,6 +73,12 @@ def main():
 
   parser.add_argument("--reopen-stderr", metavar='FILE', type=argparse.FileType('a', encoding='UTF-8'))
   parser.add_argument("--reopen-stdout", metavar='FILE', type=argparse.FileType('a', encoding='UTF-8'))
+
+
+  parser.add_argument("--assets-fetch", default=False, action='store_const', const=True,
+                      help="""Fetch any assets we don't already have.""")
+  parser.add_argument("--assets-root", metavar='DIR', type=str,
+                      help="""Specify root directory for assets.""")
 
   parser.add_argument("--metagraphdef", metavar='FILE', type=str,
                       help="""Graph file to load.""")
@@ -174,6 +182,9 @@ def main():
     if not FLAGS.workspace:
       FLAGS.workspace = "."
 
+  if FLAGS.assets_root is None:
+    FLAGS.assets_root = path.join(FLAGS.workspace, "assets")
+
   if FLAGS.output_root is None:
     FLAGS.output_root = path.join(FLAGS.workspace, "pkg")
 
@@ -248,12 +259,12 @@ def main():
     if tb_port is not None:
       tb_port = int(tb_port)
 
-    from nao import tensorboard_server
+    from nao.tool import tensorboard_server
     sys.exit(tensorboard_server.main(tb_logdir, tb_host=tb_host, tb_port=tb_port))
 
   if FLAGS.jupyter_kernel != "":
     jupyter_config_file = FLAGS.jupyter_kernel
-    from nao import jupyter_kernel, jupyter_kernel_driver
+    from nao.tool import jupyter_kernel, jupyter_kernel_driver
 
     if jupyter_config_file:
       eprint("Reading jupyter_config file '%s'..." % jupyter_config_file)
@@ -276,6 +287,45 @@ def main():
     repl_session = graph_repl.ReplSession(pallet_parser)
     driver = jupyter_kernel_driver.Driver(repl_session)
     sys.exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
+
+  def feed_dict_fn():
+    feed_dict = {}
+    # Properly find and strip prefix of constants, loading them with given prefix to feed_dict
+    if FLAGS.feed_constants:
+      feed_graph_def = graph_io.read_graph_def(FLAGS.feed_constants, FLAGS.feed_constants_binary)
+      constants = graph_query.find_nodes_with_prefix(feed_graph_def, FLAGS.feed_constants_strip)
+      constants_dict = graph_xform.constants_as_dict(constants)
+      strip_prefix = FLAGS.feed_constants_strip
+      add_prefix = FLAGS.feed_constants_prefix
+      for name, value in constants_dict.items():
+        if strip_prefix != None:
+          if name.startswith(strip_prefix):
+            name = name[len(strip_prefix):]
+          else:
+            continue
+        feed_dict[add_prefix + name + ":0"] = value
+
+    asset_map = graph_assets.load_asset_map(tf.get_default_graph())
+    eprint("asset_map", asset_map)
+
+    assets_by_path = {}
+    missing_assets = {}
+    for asset_name, asset in asset_map.items():
+      asset_path = path.join(FLAGS.assets_root, asset_name)
+      assets_by_path[asset_path] = asset
+      feed_dict[asset["placeholder"]] = asset_path
+      if not os.path.exists(asset_path):
+        missing_assets[asset_path] = asset
+
+    if len(missing_assets) > 0:
+      if not FLAGS.assets_fetch:
+        raise Exception("Missing assets: %s" % missing_assets)
+
+      for asset_path, asset in missing_assets.items():
+        nao_assets.maybe_download(asset_path, asset["url"])
+
+    eprint("feed_dict", feed_dict)
+    return feed_dict
 
   def log_dir_fn(pkg_names):
     if FLAGS.log_dir:
@@ -308,7 +358,7 @@ def main():
 
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
-      feed_dict={},
+      feed_dict_fn=feed_dict_fn,
       result_pattern=re.compile(FLAGS.train_result_pattern),
       finish_session_fn=post_train,
       log_dir_fn=log_dir_fn,
@@ -318,7 +368,7 @@ def main():
   if FLAGS.test:
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
-      feed_dict={},
+      feed_dict=feed_dict_fn,
       log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
@@ -350,9 +400,13 @@ def main():
 
     eprint("var_names", var_names)
     eprint("output_node_names", output_node_names)
-    graph_xform.strip_meta_graph(meta_graph_def, output_node_names, var_names)
+    # graph_xform.strip_meta_graph(meta_graph_def, output_node_names, var_names)
 
   if FLAGS.output_file:
+    output_dirname = os.path.dirname(FLAGS.output_file)
+    if not os.path.exists(output_dirname):
+      os.makedirs(output_dirname)
+
     if FLAGS.output_format == "metagraph":
       graph_io.write_meta_graph_def(
         meta_graph_def=meta_graph_def,
@@ -360,7 +414,7 @@ def main():
         binary=FLAGS.output_binary)
     elif FLAGS.output_format == "graph":
       # If we trained and we're outputting a graph_def, we'll need to modify it.
-      # We'll need to replace all the trained variables with the constants that
+      # We'll need to replace all the trained variables with the *constants* that
       # their initializers refer to.
       if FLAGS.train:
         pass
@@ -369,26 +423,10 @@ def main():
         file=FLAGS.output_file,
         binary=FLAGS.output_binary)
 
-  feed_dict = {}
-  # Properly find and strip prefix of constants, loading them with given prefix to feed_dict
-  if FLAGS.feed_constants:
-    feed_graph_def = graph_io.read_graph_def(FLAGS.feed_constants, FLAGS.feed_constants_binary)
-    constants = graph_query.find_nodes_with_prefix(feed_graph_def, FLAGS.feed_constants_strip)
-    constants_dict = graph_xform.constants_as_dict(constants)
-    strip_prefix = FLAGS.feed_constants_strip
-    add_prefix = FLAGS.feed_constants_prefix
-    for name, value in constants_dict.items():
-      if strip_prefix != None:
-        if name.startswith(strip_prefix):
-          name = name[len(strip_prefix):]
-        else:
-          continue
-      feed_dict[add_prefix + name + ":0"] = value
-
   if FLAGS.run:
     results = graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
-      feed_dict=feed_dict,
+      feed_dict=feed_dict_fn,
       log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.run_result_pattern),
     )

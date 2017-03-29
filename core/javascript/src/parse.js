@@ -363,17 +363,17 @@ function createSemantics(grammar) {
       ImportDeclarationBody_multi: function(_1, _2, specs, _3, _4, _5) {
         return specs.asJson;
       },
-      ImportSpec: function(packageName, importPath, _) {
-        var [path, scope] = importPath.asJson.split(":", 2);
+      ImportSpec: function(packageName, importPath, importTag, _) {
         var name = packageName.asJson[0];
         if (!name) {
+          var [path, scope] = importPath.asJson.split(":", 2);
           var pathFragments = (scope || path).split("/");
           name = pathFragments[pathFragments.length - 1];
         }
         // console.warn("name", name)
         // console.warn("path", path)
         // console.warn("scope", scope)
-        return [name, path, scope];
+        return [name, importPath.asJson, importTag.asJson[0]];
       },
       _terminal: function() { return this.sourceString; },
       identifier: function(_1, _2) { return this.sourceString; },

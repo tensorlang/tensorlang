@@ -1,6 +1,6 @@
 import (
   log          "log"
-  mnistQueue   "data/mnist/queue"
+  mnistQueue   "datasets/mnist/queue"
 
   digits       "demo/digits:digits"
   summary      "tensorflow:summary"
@@ -36,6 +36,8 @@ func logPredictions(predictions) {
   log.LogWithStep(image8s, step)
   summary.image(partitionedImages:9) -- image9s
   log.LogWithStep(image9s, step)
+
+  ← result = after __leaves { 1 }
 }
 
 func Main() {

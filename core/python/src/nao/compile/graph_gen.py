@@ -17,10 +17,12 @@ from tensorflow.core.framework import graph_pb2
 from tensorflow.core.framework import variable_pb2
 from tensorflow.core.protobuf import control_flow_pb2
 
-from nao import graph_context
-from nao import graph_ffi
-from nao import graph_function
-from nao import graph_io
+from nao.structure import graph_assets
+from nao.structure import graph_ffi
+from nao.structure import graph_io
+
+from nao.compile import graph_context
+from nao.compile import graph_function
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -224,6 +226,7 @@ class TopLevel:
   def __init__(self):
     self.nesting_level = 0
     self._python_importer = graph_ffi.PythonImporter()
+    self._assets = []
     self._variable_listeners = []
 
   def add_variable_listener(self, listener):
@@ -285,10 +288,15 @@ class TopLevel:
 
     fn = self.__unwrap_bag(fn)
 
-    scope_name = name
-    if scope_name == None and hasattr(fn, '_name'):
-      g = tf.get_default_graph()
-      scope_name = g.unique_name(fn._name() or 'fnc', False).split("/")[-1]
+    base_scope_name = None
+    if hasattr(fn, '_name'):
+      base_scope_name = fn._name()
+
+    if not base_scope_name:
+      base_scope_name = 'fnc'
+
+    g = tf.get_default_graph()
+    scope_name = "q___%s" % g.unique_name(base_scope_name, False).split("/")[-1]
 
     if not hasattr(fn, 'apply') and hasattr(fn, 'apply_attrs'):
       fn = fn.apply_attrs(self, attrs)
@@ -302,11 +310,11 @@ class TopLevel:
     if name != None:
       ctx.define_local(name, result)
 
-      # # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
-      # if len(result) == 1:
-      #   result = tf.identity(result.get(None), name=name)
-      #
-      # ctx.define_local(name, result)
+      # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
+      if isinstance(result, graph_function.RetvalBag) and result.len() == 1:
+        result = result.get(None)
+      if isinstance(result, tf.Tensor):
+        tf.identity(result, name=name)
 
     return result
 
@@ -489,7 +497,7 @@ class TopLevel:
         input_map[p_name] = v
         input_keys.append(p_name)
         input_values.append(v)
-      return (True, p)
+      return ([(p_name, v)], p)
 
     # eprint('init_exprs', init_exprs)
     initial_value_ctx = ctx.subcontext()
@@ -562,7 +570,7 @@ class TopLevel:
 
     # eprint("while initial_local_names", initial_local_names)
     # eprint("while initial_tensor_list", initial_tensor_list)
-    # eprint("while input_map", input_map)
+    eprint("while input_map", input_map)
     # eprint("while body_retvals", body_retvals)
     # eprint("while body_retval_dict", body_retval_dict)
     # eprint("while body_retval_names", body_retval_names)
@@ -677,27 +685,6 @@ class TopLevel:
     # eprint(ctx)
     return ctx.get_attr(name)
 
-  # generating graphs directly
-  # def visit_graph_exprs(self, ctx, retval_names, exprs):
-  #   for expr in exprs:
-  #     result = None
-  #     if expr[0] == "__retval":
-  #       name = expr[1]
-  #       subexpr = expr[2]
-  #       result = self.visit(ctx, subexpr)
-  #       ctx.define_local(name, result)
-  #       retval_names.append(name)
-  #     elif expr[0] == "_sf_after_leaves":
-  #       # TODO(adamb) Should actually nest local variables AND leaves
-  #       after_exprs = expr[1:]
-  #       leaves = ctx.leaves()
-  #       with tf.control_dependencies(leaves):
-  #         result = self.visit_graph_exprs(ctx, retval_names, after_exprs)
-  #     else:
-  #       result = self.visit(ctx, expr)
-  #
-  #     ctx.set_above(result)
-
   def _named_var_update(self, ctx, name, rhs):
     return ctx.update_local(name, rhs)
 
@@ -754,6 +741,20 @@ class TopLevel:
 
     raise Exception("Unknown package type %s" % type)
 
+  def _sf_asset(self, ctx, import_path, tags):
+    placeholder_name = import_path.split("/")[-1].replace("-", "_").replace(".", "_")
+    placeholder = tf.placeholder(tf.string, tf.TensorShape([]), placeholder_name)
+    self._assets.append(
+      {
+        "name": import_path,
+        "placeholder": placeholder.name,
+        "url": tags.get("url", None),
+        "sha256": tags.get("sha256", None),
+      }
+    )
+    ctx.define_fully_qualified_package(import_path, placeholder)
+    return placeholder
+
   def _sf_tf_metagraph_package(self, ctx, name, scope, path, binary):
     eprint("_sf_tf_metagraph_package", name, scope)
     # TODO(adamb) how do we handle the fact that there may be multiple packages
@@ -777,17 +778,19 @@ class TopLevel:
 
   def _sf_import(self, ctx, name_triples):
     # HACK(adamb) At the moment, assume that we're only talking about python)
-    for name, package_path, scope in name_triples:
+    for name, import_path, tag in name_triples:
       pkg = None
-      if package_path == "tensorflow":
+      if import_path.startswith("tensorflow:"):
+        package_path, scope = import_path.split(":", 2)
         py_module = tf
         if scope:
           parts = scope.split("/")
           py_module = reduce(lambda p, n: getattr(p, n), parts, py_module)
         pkg = graph_function.PythonPackage(py_module)
       else:
-        # TODO(adamb) Stop doing splitting in parser. Split above in python-specific code.
-        pkg = ctx.fully_qualified_package(package_path)
+        if "://" in import_path:
+          import_path = import_path.split("://")[1]
+        pkg = ctx.fully_qualified_package(import_path)
 
       ctx.import_package(name, pkg)
 
@@ -798,14 +801,6 @@ class TopLevel:
       eprint("not capitalized", name)
       return
 
-    # if name.startswith("Train"):
-    #   eprint("won't export training function", name)
-    #   return
-    #
-    # if name.startswith("Test"):
-    #   eprint("won't export testing function", name)
-    #   return
-
     value = self.__unwrap_bag(value)
     eprint("considering", name)
 
@@ -814,10 +809,6 @@ class TopLevel:
       return
 
     fn = value
-
-    # HACK(adamb) We want to nest the function under "_".
-    fn = fn.clone()
-    fn.rename("_")
 
     g = tf.get_default_graph()
     var_collection_name = "%s:variable_names" % (g.unique_name(name, False))
@@ -832,25 +823,24 @@ class TopLevel:
         args = [tf.placeholder(arg_dtype, arg_shape, arg_name) for (arg_name, arg_shape, arg_dtype) in fn._arg_specs()]
 
       subctx2 = subctx.subcontext()
-      fn.apply(self, subctx2, None, None, args)
+      fn.apply(self, subctx2, "_", None, args)
 
       with tf.variable_scope("outputs"):
         g = tf.get_default_graph()
         for (retval_name, retval_inner_name) in fn._retval_specs():
           tensor_prefix = "%s/%s" % (package_name, name)
           try:
+            returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
+          except KeyError as ke:
+            eprint("repeating lookup of %s in prefix %s for retval %s" % (retval_inner_name, tensor_prefix, retval_name))
+            # If we fail to find the tensor above, perhaps it was just an input.
             try:
-              returned_tensor = g.get_tensor_by_name("%s/_/%s:0" % (tensor_prefix, retval_inner_name))
-            except KeyError as ke:
-              eprint("repeating lookup of %s in prefix %s for retval %s" % (retval_inner_name, tensor_prefix, retval_name))
-              # If we fail to find the tensor above, perhaps it was just an input.
-              try:
-                returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
-              except KeyError:
-                nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
-                nodes.sort()
-                eprint('error, but got nodes', nodes)
-                raise ke
+              returned_tensor = g.get_tensor_by_name("%s/inputs/%s:0" % (tensor_prefix, retval_inner_name))
+            except KeyError:
+              nodes = [n.name for n in tf.get_default_graph().as_graph_def().node]
+              nodes.sort()
+              eprint('error, but got nodes', nodes)
+              raise ke
 
           tf.identity(returned_tensor, name=retval_name)
 
@@ -944,6 +934,10 @@ def meta_graph_def_from_exprs(exprs):
 
   with g.as_default():
     visitor._visit_exprs(ctx, exprs)
+
+    asset_map = graph_assets.consolidate_to_asset_map(visitor._assets)
+    asset_tensor = graph_assets.store_asset_map(asset_map)
+    eprint("visitor._assets", visitor._assets, asset_tensor)
 
     # NOTE(adamb) Could also store files to copy out in assets_collection
     py_func_data = visitor._python_importer.dump_py_funcs(script_ops._py_funcs)

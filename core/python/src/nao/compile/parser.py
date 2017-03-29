@@ -55,8 +55,8 @@ class PalletParser:
       if expr[0] != "_sf_import":
         continue
 
-      for import_name, import_path, imported_scope in expr[1]:
-        imported.append((import_path, imported_scope))
+      for import_name, import_path, import_tag in expr[1]:
+        imported.append((import_path, import_tag))
 
     return imported
 
@@ -65,20 +65,20 @@ class PalletParser:
     pp(expr)
     return expr
 
-  def _attempt(self, language, import_path, imported_scope, filepath=None, content=None):
+  def _attempt(self, language, import_path, filepath=None, content=None):
     return {
       "language": language,
-      "import_path": import_path,
+      "import_path": import_path.split(":", 2)[0],
       "imported_package_name": path.basename(import_path),
-      "imported_scope_name": imported_scope,
+      "imported_scope_name": (import_path + ":").split(":", 2)[1][:-1],
       "path": filepath,
       "content": content,
     }
 
-  def _resolve_import(self, import_path, imported_scope):
+  def _resolve_import(self, import_path):
     if import_path in self._source_cache:
       source = self._source_cache[import_path]
-      return self._attempt("nao", import_path, imported_scope, content=source)
+      return self._attempt("nao", import_path, content=source)
 
     for attempt in self._attempts:
       filepath = path.join(attempt["dir"], import_path + attempt["suffix"])
@@ -86,33 +86,60 @@ class PalletParser:
         return self._attempt(
             attempt["language"],
             import_path,
-            imported_scope,
             filepath=filepath)
 
     raise Exception("No such import path: " + import_path)
 
-  def resolve_import(self, import_path, imported_scope):
-    cache_key = (import_path, imported_scope)
+  def resolve_import(self, import_path, import_tag):
+    def _parse_import_tag(import_tag):
+      if not import_tag:
+        return {}
+
+      def split_tag(s):
+        result = s.split(":", 2)
+        if len(result) == 1:
+          result = [result[0], True]
+        return result
+
+      return dict([split_tag(frag) for frag in import_tag.split(",")])
+
+    cache_key = (import_path, import_tag)
     if cache_key in self._import_cache:
       return self._import_cache[cache_key]
 
-    resolved = self._resolve_import(import_path, imported_scope)
-    if resolved["language"] == "nao":
-      source = resolved["content"]
-      if source is None:
-        with open(resolved["path"]) as f:
-          source = f.read()
-      exprs = self._parse_external(source)
-
-      pkg = ["_sf_package", resolved["import_path"], *exprs]
-      for import_path, imported_scope in self._enumerate_imports(pkg):
-        # Skip imports that provide direct access to TensorFlow internals.
-        if import_path == "tensorflow":
-          continue
-
-        self.resolve_import(import_path, imported_scope)
+    import_tags = _parse_import_tag(import_tag)
+    print("_parse_import_tag", import_tag, import_tags, file=sys.stderr)
+    if import_tags.get("asset", False):
+      import_tags["url"] = import_path
+      pkg = [
+        "_sf_asset",
+        import_path.split("://", 2)[1],
+        import_tags,
+      ]
     else:
-      pkg = ["_sf_foreign_package", resolved["language"], resolved["import_path"], resolved["imported_scope_name"], resolved["path"]]
+      resolved = self._resolve_import(import_path)
+      if resolved["language"] == "nao":
+        source = resolved["content"]
+        if source is None:
+          with open(resolved["path"]) as f:
+            source = f.read()
+        exprs = self._parse_external(source)
+
+        pkg = ["_sf_package", resolved["import_path"], *exprs]
+        for import_path, import_tag in self._enumerate_imports(pkg):
+          # Skip imports that provide direct access to TensorFlow internals.
+          if import_path.startswith("tensorflow:"):
+            continue
+
+          self.resolve_import(import_path, import_tag)
+      else:
+        pkg = [
+          "_sf_foreign_package",
+          resolved["language"],
+          resolved["import_path"],
+          resolved["imported_scope_name"],
+          resolved["path"],
+        ]
 
     self._import_cache[cache_key] = pkg
     self._pallet.append(pkg)

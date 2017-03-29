@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from collections import OrderedDict
 
-from nao import graph_function
+from nao.compile import graph_function
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -117,12 +117,21 @@ class ProxyContext:
       raise Exception("Tried to call %s with args %s and kwargs %s"  % (fn, args, kwargs))
 
   def _maybe_proxy(self, v, name=None):
-    t = type(v)
-    if t != tf.Operation and t != tf.Tensor and t != tf.Variable:
-      return (False, v)
+    if isinstance(v, graph_function.RetvalBag):
+      proxied = []
+      def do_maybe_proxy(v_):
+        proxied_, v_ = self._maybe_proxy(v_)
+        proxied.extend(proxied_)
+        return v_
+      v2 = v.wrap(do_maybe_proxy)
+      eprint("replacing", v, "with", v2)
+      return (proxied, v2)
+
+    if not isinstance(v, (tf.Operation, tf.Tensor, tf.Variable)):
+      return ((), v)
 
     if v.graph == tf.get_default_graph():
-      return (False, v)
+      return ((), v)
 
     return self._proxy(self._input_map, v, name)
 
@@ -163,11 +172,13 @@ class ProxyContext:
     else:
       placeholder_name = "Proxy_%d" % len(self._input_map)
 
-    did_proxy, v = self._maybe_proxy(self._other.get_local(name), placeholder_name)
-    if did_proxy:
-      if name not in self._placeholder_name_cache:
-        self._placeholder_name_cache[name] = v.op.name
-      self._placeholder_op_cache[name] = v
+    proxied, v = self._maybe_proxy(self._other.get_local(name), placeholder_name)
+    if proxied:
+      for proxied_name, proxied_v in proxied:
+        eprint("proxied", proxied_name, proxied_v)
+        if proxied_name not in self._placeholder_name_cache:
+          self._placeholder_name_cache[proxied_name] = proxied_v.op.name
+        self._placeholder_op_cache[proxied_name] = proxied_v
     return v
 
   def define_local(self, n, v):
@@ -258,7 +269,6 @@ class Context:
     ctx._locals = copy.copy(ctx._locals)
     return ctx
 
-
   def get_above(self):
     return self._above
 
@@ -324,6 +334,9 @@ class Context:
     if name in self._attrs:
       return self._attrs[name]
 
+    if name in self._imported_packages:
+      return self._imported_packages[name]
+
     return self._delegate.get_local(name)
 
   def get_local_strict(self, name):
@@ -354,5 +367,5 @@ class Context:
     #   l = l | self._delegate.leaves()
     return l
 
-  # def __str__(self):
-  #   return "%s" % self._locals
+  def __str__(self):
+    return "%s" % dict([(k, str(v)) for k, v in self._locals.items()])

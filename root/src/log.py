@@ -2,7 +2,7 @@ from tensorflow.python.framework import dtypes
 
 import sys
 
-from nao import graph_execution
+from nao.run import graph_execution
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)

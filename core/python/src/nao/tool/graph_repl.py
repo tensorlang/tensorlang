@@ -1,7 +1,7 @@
 import tensorflow as tf
 
-from nao import graph_gen
-from nao import graph_function
+from nao.compile import graph_gen
+from nao.compile import graph_function
 
 class ReplSession:
   def __init__(self, parser):
@@ -15,7 +15,7 @@ class ReplSession:
   def run(self, src):
     self._parser.clear()
     self._parser.put_source("main", src)
-    self._parser.resolve_import("main", None)
+    self._parser.resolve_import("main", None, None)
     exprs = self._parser.pallet()
     last_expr_result = self._visitor._visit_exprs(self._ctx, exprs)
 

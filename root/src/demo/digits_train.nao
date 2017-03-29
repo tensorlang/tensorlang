@@ -1,6 +1,6 @@
 import (
   log           "log"
-  mnistQueue    "data/mnist/queue"
+  mnistQueue    "datasets/mnist/queue"
   digits        "demo/digits"
   gradDescent   "train/gradient_descent"
 
@@ -10,6 +10,7 @@ import (
 )
 
 func loss(prediction float, label double <?,10>, step int32) {
+  prediction
   tfNn.softmax_cross_entropy_with_logits(logits: ^, labels: label) -- xEntropy
   tf.reduce_mean(xEntropy)
   summary.scalar(^) -- crossEntropy
@@ -26,7 +27,7 @@ func loss(prediction float, label double <?,10>, step int32) {
 func Train() {
   let trainStep = gradDescent.Step[
     lossFn: func (d float, l double <?,10>, s int32) {
-      emit e = loss(lenet.Lenet(d), l, s)
+      emit e = loss(digits.Classify(d), l, s)
     },
     learningRate: 0.01,
   ]
@@ -49,5 +50,6 @@ func Train() {
 
   tf.Assert(f:step == maxSteps, {"f:step == maxSteps"})
 
+  f:step
   ← result = after __leaves { 1 }
 }
