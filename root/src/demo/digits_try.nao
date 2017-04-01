@@ -2,11 +2,11 @@ import (
   log          "log"
   mnistQueue   "datasets/mnist/queue"
 
-  digits       "demo/digits:digits"
+  digits       "demo/digits_trained:demo/digits"
   summary      "tensorflow:summary"
 )
 
-func logPredictions(predictions) {
+func logPredictions(images, predictions) {
   predictions
   tf.argmax(^, 1)
   tf.to_int32(^)
@@ -50,13 +50,13 @@ func Main() {
   tf.reshape(v:1, [-1, 28, 28, 1]) -- images
 
   digits.Classify(^) -- predictions
-  logPredictions(^)
+  logPredictions(images, ^)
 
   // Now log accuracy!
   tf.argmax(predictions, 1) == tf.argmax(labels, 1) -- correct_prediction
   tf.reduce_mean(tf.cast(^, tf.float32)) -- x
   summary.scalar(^) -- accuracy
-  log.LogWithStep(^, step)
+  log.LogWithStep(^, 13)
   log.Debug(x)
 
   ← result = after __leaves { 1 }

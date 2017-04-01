@@ -16,15 +16,15 @@ import gc
 
 from os import path
 
+from nao.compiler.compiler import Compiler
+
 from nao.structure import graph_assets
-from nao.compile import graph_gen
-from nao.compile import parser as source_parser
 from nao.structure import graph_io
 from nao.structure import graph_query
 from nao.structure import graph_xform
-from nao.tool import graph_repl
 from nao.run import graph_execution
-from nao.structure import assets as nao_assets
+from nao.tool import graph_repl
+from nao.tool import assets as nao_assets
 
 import tensorflow as tf
 from tensorflow.python.framework import meta_graph
@@ -39,28 +39,20 @@ def eprint(*args, **kwargs):
 
 pp = pprint.PrettyPrinter(indent=2, stream=sys.stderr).pprint
 
-def compile_meta_graph(input_json):
-  with open(input_json, "r") as f:
-    s = f.read()
-    input_exprs = json.loads(s)
-    # pp.pprint(input_exprs)
-
-    return graph_gen.meta_graph_def_from_exprs(input_exprs)
-
 def parse_packages(src_root, pkg_root, package_names):
-  p = source_parser.PalletParser(src_root, pkg_root)
+  p = Compiler(src_root, pkg_root)
 
   for package_name in package_names:
-    p.resolve_import(package_name, None)
+    p.resolve_import_path(package_name)
 
-  return p.pallet()
+  return p.meta_graph_def()
 
 def parse_source(src_root, pkg_root, package_name, source):
-  p = source_parser.PalletParser(src_root, pkg_root)
-  p.put_source(package_name, source)
-  p.resolve_import(package_name, None)
+  p = Compiler(src_root, pkg_root)
+  p.put_source(package_name + ".nao", source)
+  p.resolve_import_path(package_name)
 
-  return p.pallet()
+  return p.meta_graph_def()
 
 def main():
   parser = argparse.ArgumentParser()
@@ -119,9 +111,6 @@ def main():
                       help="""Run train graphs with given (or default) --train-* options""")
   parser.add_argument("--train-result-pattern", metavar='PATTERN', type=str, default="^(${package}/Train[^/]*)/outputs/(.*)$",
                       help="""Pattern to discover train graph results.""")
-
-  parser.add_argument("--input-json", metavar='FILE', type=str,
-                      help="""JSON file to load.""")
 
   parser.add_argument("--workspace", metavar='DIR', type=str,
                       help="""Default value for workspace""")
@@ -204,16 +193,15 @@ def main():
   if should_parse:
     if FLAGS.source:
       package_names = ["main"]
-      expressions = parse_source(FLAGS.root, FLAGS.output_root, package_names[0], FLAGS.source)
+      meta_graph_def = parse_source(FLAGS.root, FLAGS.output_root, package_names[0], FLAGS.source)
     else:
       # Look for matching packages _train
       if FLAGS.train:
         output_package_names = package_names[:]
         package_names.extend([pkg + "_train" for pkg in package_names])
-      expressions = parse_packages(FLAGS.root, FLAGS.output_root, package_names)
+      meta_graph_def = parse_packages(FLAGS.root, FLAGS.output_root, package_names)
 
     # print("parsed", expressions)
-    meta_graph_def = graph_gen.meta_graph_def_from_exprs(expressions)
     # We need to do this so we clean up references to py_funcs. LAME.
     gc.collect()
 
@@ -231,10 +219,6 @@ def main():
     meta_graph_def = graph_io.read_meta_graph_def(
         FLAGS.metagraphdef,
         FLAGS.binary_metagraphdef)
-
-  if FLAGS.input_json:
-    package_names = ["[^/]+"]
-    meta_graph_def = compile_meta_graph(FLAGS.input_json)
 
   if FLAGS.output and FLAGS.output_name and not FLAGS.output_file:
     output_suffix = "." + FLAGS.output_format + ".pb"
@@ -254,7 +238,7 @@ def main():
   eprint("package_names", package_names)
 
   if FLAGS.tensorboard != "":
-    tb_host, tb_port = FLAGS.tensorboard.split(':', 2)
+    tb_host, tb_port = FLAGS.tensorboard.split(':', 1)
     tb_logdir = FLAGS.log_dir or FLAGS.log_root
     if tb_port is not None:
       tb_port = int(tb_port)
@@ -283,7 +267,7 @@ def main():
         'transport'         : 'tcp'
       }
 
-    pallet_parser = source_parser.PalletParser(FLAGS.root, FLAGS.output_root)
+    pallet_parser = Compiler(FLAGS.root, FLAGS.output_root)
     repl_session = graph_repl.ReplSession(pallet_parser)
     driver = jupyter_kernel_driver.Driver(repl_session)
     sys.exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
@@ -368,7 +352,7 @@ def main():
   if FLAGS.test:
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
-      feed_dict=feed_dict_fn,
+      feed_dict_fn=feed_dict_fn,
       log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
@@ -400,7 +384,7 @@ def main():
 
     eprint("var_names", var_names)
     eprint("output_node_names", output_node_names)
-    # graph_xform.strip_meta_graph(meta_graph_def, output_node_names, var_names)
+    graph_xform.strip_meta_graph(meta_graph_def, output_node_names, var_names)
 
   if FLAGS.output_file:
     output_dirname = os.path.dirname(FLAGS.output_file)
@@ -426,7 +410,7 @@ def main():
   if FLAGS.run:
     results = graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
-      feed_dict=feed_dict_fn,
+      feed_dict_fn=feed_dict_fn,
       log_dir_fn=log_dir_fn,
       result_pattern=re.compile(FLAGS.run_result_pattern),
     )
@@ -439,7 +423,7 @@ def main():
     )
 
   if FLAGS.repl:
-    graph_repl.run(source_parser.PalletParser(FLAGS.root, FLAGS.output_root))
+    graph_repl.run(Compiler(FLAGS.root, FLAGS.output_root))
 
 if __name__ == '__main__':
   try:

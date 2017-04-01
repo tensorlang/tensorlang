@@ -22,7 +22,7 @@ func loadDataQueue[capacity](imagesFile, labelsFile) {
   mnistFormat.ReadLabels(labelsFile) -- allLabels
   nao.enqueue_many(q:queue_ref, {allLabels, allImages})
 
-  emit ref = after __leaves { q:queue_ref }
+  emit ref = after __leaves { tf.identity(q:queue_ref) }
 }
 
 func ForTesting() {

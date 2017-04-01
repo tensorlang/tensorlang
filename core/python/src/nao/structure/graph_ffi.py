@@ -36,7 +36,7 @@ class PythonImporter:
             "py_funcs is not pristine (len(py_funcs._funcs) is %d). Aborting restore." % len(py_funcs._funcs))
 
       py_funcs._unique_id = unique_id
-      py_funcs._funcs = self._restore_modules(modules)
+      py_funcs._funcs = self._load_funcs(modules)
 
   def _dump_modules(self, fn_by_token_dict):
     modules = {}
@@ -52,7 +52,7 @@ class PythonImporter:
 
     return modules
 
-  def _restore_modules(self, modules):
+  def _load_funcs(self, modules):
     fn_by_token = {}
     for module_name, data in modules.items():
       source, fn_name_by_token = data['source'], data['fn_name_by_token']

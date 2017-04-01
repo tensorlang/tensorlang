@@ -5,7 +5,9 @@ import tensorflow as tf
 
 from collections import OrderedDict
 
-from nao.compile import graph_function
+from nao.compiler.primitive_function import PrimitiveFunction
+from nao.compiler.retvalbag import RetvalBag
+from nao.compiler.nao import graph_function
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -29,7 +31,7 @@ class SentinelContextDelegate:
   def get_index(self, target, index):
     # eprint("get_index", target, index, type(index))
 
-    if type(target) == graph_function.RetvalBag:
+    if type(target) == RetvalBag:
       return target.get(index)
 
     if isinstance(index, int):
@@ -41,7 +43,7 @@ class SentinelContextDelegate:
     # instance methods like those on QueueBase. 8[
     v = getattr(target, index)
     if callable(v):
-      return graph_function.PrimitiveFunction(v)
+      return PrimitiveFunction(v)
 
     return v
 
@@ -69,135 +71,9 @@ class SentinelContextDelegate:
   def leaves(self):
     return frozenset([])
 
-class ProxyContext:
-  def __init__(self, other,
-      proxy=None,
-      input_map=None):
-    self._proxy = proxy
-    self._placeholder_op_cache = {}
-    self._other = other
-
-    if input_map == None:
-      input_map = OrderedDict()
-    self._input_map = input_map
-    self._placeholder_name_cache = {}
-
-  def duplicate_for(self, other):
-    d = other.duplicate()
-    delegate = d._delegate
-    while delegate:
-      if type(delegate) == ProxyContext:
-        return d
-
-      delegate = delegate._delegate
-
-    d._delegate = ProxyContext(d._delegate,
-        proxy=self._proxy,
-        input_map=self._input_map)
-    return d
-
-  def clear_placeholder_op_cache(self):
-    self._placeholder_op_cache = {}
-
-  def subcontext(self):
-    return Context(self)
-
-  def input_map(self):
-    return OrderedDict(self._input_map)
-
-  def call(self, fn, args, kwargs):
-    # Operations on queues mean we have to do gross stuff like inspect return
-    # values of python functions.
-    try:
-      # return fn(*args, **kwargs)
-      r = fn(*args, **kwargs)
-      # r = self._proxy(r, None)[1]
-      return r
-    except:
-      raise Exception("Tried to call %s with args %s and kwargs %s"  % (fn, args, kwargs))
-
-  def _maybe_proxy(self, v, name=None):
-    if isinstance(v, graph_function.RetvalBag):
-      proxied = []
-      def do_maybe_proxy(v_):
-        proxied_, v_ = self._maybe_proxy(v_)
-        proxied.extend(proxied_)
-        return v_
-      v2 = v.wrap(do_maybe_proxy)
-      eprint("replacing", v, "with", v2)
-      return (proxied, v2)
-
-    if not isinstance(v, (tf.Operation, tf.Tensor, tf.Variable)):
-      return ((), v)
-
-    if v.graph == tf.get_default_graph():
-      return ((), v)
-
-    return self._proxy(self._input_map, v, name)
-
-  def get_index(self, target, index):
-    return self._maybe_proxy(self._other.get_index(target, index))[1]
-
-  def fully_qualified_package(self, name):
-    return self._other.fully_qualified_package(name)
-
-  def imported_package(self, name):
-    return self._other.imported_package(name)
-
-  def get_attr(self, name):
-    return self._other.get_attr(name)
-
-  def update_local(self, name, rhs):
-    # TODO(adamb) Should remember proxied updates so that we can properly update
-    #     the closed-over var after returning from a loop.
-    v = self.get_local(name)
-    if not isinstance(v, tf.Variable) and not (isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype):
-      raise Exception("%s not a variable: %s" % (name, v))
-      eprint("proxy updating local", name, "from", v, "to", rhs)
-      v = tf.assign(v, rhs)
-      eprint("proxy updated local", name, "is", v)
-      self._locals[name] = v
-      return v
-
-  def get_local(self, name):
-    if type(name) != str:
-      raise Exception("Can't get_local for non string: %s" % name)
-
-    if name in self._placeholder_op_cache:
-      return self._placeholder_op_cache[name]
-
-    placeholder_name = None
-    if name in self._placeholder_name_cache:
-      placeholder_name = self._placeholder_name_cache[name]
-    else:
-      placeholder_name = "Proxy_%d" % len(self._input_map)
-
-    proxied, v = self._maybe_proxy(self._other.get_local(name), placeholder_name)
-    if proxied:
-      for proxied_name, proxied_v in proxied:
-        eprint("proxied", proxied_name, proxied_v)
-        if proxied_name not in self._placeholder_name_cache:
-          self._placeholder_name_cache[proxied_name] = proxied_v.op.name
-        self._placeholder_op_cache[proxied_name] = proxied_v
-    return v
-
-  def define_local(self, n, v):
-    return self._other.define_local(n, v)
-
-  def set_above(self, v):
-    return self._other.set_above(v)
-
-  def possible_leaf(self, op):
-    return self._other.possible_leaf(op)
-
-  def eliminate_leaf(self, op):
-    return self._other.eliminate_leaf(op)
-
-  def leaves(self):
-    return self._other.leaves()
-
 class Context:
-  def __init__(self, delegate):
+  def __init__(self, delegate, proxy=None):
+    self._proxy = proxy
     self._delegate = delegate
     self._fully_qualified_packages = {}
     self._imported_packages = {}
@@ -207,16 +83,18 @@ class Context:
     self._above = None
 
   def duplicate_for(self, other):
-    return self._delegate.duplicate_for(other)
+    ctx = other.duplicate()
+    ctx._proxy = self._proxy
+    return ctx
 
   def call(self, fn, args, kwargs):
-    return self._delegate.call(fn, args, kwargs)
+    return self._maybe_proxy(self._delegate.call(fn, args, kwargs))
 
   def get_index(self, target, index):
-    return self._delegate.get_index(target, index)
+    return self._maybe_proxy(self._delegate.get_index(target, index))
 
   def subcontext(self):
-    return Context(self)
+    return Context(self, proxy=self._proxy)
 
   def local_items(self):
     l = self._delegate.local_items()
@@ -267,13 +145,20 @@ class Context:
     ctx = copy.copy(self)
     ctx._attrs = copy.copy(ctx._attrs)
     ctx._locals = copy.copy(ctx._locals)
+    ctx._leaves = copy.copy(ctx._leaves)
     return ctx
 
   def get_above(self):
-    return self._above
+    return self._maybe_proxy(self._above)
 
   def set_above(self, value):
     self._above = value
+
+  def _maybe_proxy(self, v):
+    if self._proxy is None:
+      return v
+
+    return self._proxy(v)
 
   def update_local(self, name, rhs):
     if name in self._locals:
@@ -307,59 +192,62 @@ class Context:
 
   def get_attr(self, name):
     if name in self._attrs:
-      return self._attrs[name]
+      return self._maybe_proxy(self._attrs[name])
 
     # If a local is *completely constant*, we can treat it like an attr.
     if name in self._locals:
       local = self._locals[name]
       if isinstance(local, tf.Tensor):
         try:
-          return tf.contrib.util.constant_value(local)
+          return self._maybe_proxy(tf.contrib.util.constant_value(local))
         except TypeError as te:
           raise Exception("Local is not usable as an attribute: " + name)
-      return local
+      return self._maybe_proxy(local)
 
-    return self._delegate.get_attr(name)
+    return self._maybe_proxy(self._delegate.get_attr(name))
 
   def get_local(self, name):
     if type(name) != str:
       raise Exception("Tried to look up local with non-string name: %s" % name)
 
     if name == '^':
-      return self._above
+      return self._maybe_proxy(self._above)
 
     if name in self._locals:
-      return self._locals[name]
+      return self._maybe_proxy(self._locals[name])
 
     if name in self._attrs:
-      return self._attrs[name]
+      return self._maybe_proxy(self._attrs[name])
 
     if name in self._imported_packages:
-      return self._imported_packages[name]
+      return self._maybe_proxy(self._imported_packages[name])
 
-    return self._delegate.get_local(name)
+    return self._maybe_proxy(self._delegate.get_local(name))
 
   def get_local_strict(self, name):
     if name in self._locals:
-      return self._locals[name]
+      return self._maybe_proxy(self._locals[name])
 
     raise Exception("No such entry: %s. Have: %s" % (name, self._locals))
 
-  def possible_leaf(self, op):
-    t = type(op)
-    if t == tf.Tensor or t == tf.Operation:
-      self._leaves.add(op)
+  def possible_leaf(self, v):
+    if isinstance(v, (tf.Tensor, tf.Operation, tf.Variable)):
+      self._leaves.add(v)
 
-    if t == graph_function.RetvalBag:
-      for v in op.values():
-        self.possible_leaf(v)
+    if isinstance(v, RetvalBag):
+      for v_ in v.values():
+        self.possible_leaf(v_)
 
-  def eliminate_leaf(self, op):
-    t = type(op)
-    if t == tf.Tensor or t == tf.Operation:
-      self._leaves.discard(op)
+  def eliminate_leaf(self, v):
+    if isinstance(v, (tf.Tensor, tf.Operation, tf.Variable)):
+      self._leaves.discard(v)
 
-    return self._delegate.eliminate_leaf(op)
+    if isinstance(v, RetvalBag):
+      for v_ in v.values():
+        self.eliminate_leaf(v_)
+        return
+
+    return self._delegate.eliminate_leaf(v)
 
   def leaves(self):
     l = frozenset(self._leaves)
@@ -368,4 +256,4 @@ class Context:
     return l
 
   def __str__(self):
-    return "%s" % dict([(k, str(v)) for k, v in self._locals.items()])
+    return "%s -> %s" % (self._locals.items(), self._delegate)

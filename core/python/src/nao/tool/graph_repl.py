@@ -1,29 +1,21 @@
 import tensorflow as tf
 
-from nao.compile import graph_gen
-from nao.compile import graph_function
+from nao.compiler.retvalbag import RetvalBag
 
 class ReplSession:
-  def __init__(self, parser):
-    self._parser = parser
-    g, visitor, ctx = graph_gen.new_compilation_env()
-    self._g = g
-    self._visitor = visitor
-    self._ctx = ctx
-    self._session = tf.Session()
+  def __init__(self, compiler):
+    self._suffix = ".nao"
+    self._compiler = compiler
+    self._session = compiler.new_session()
 
   def run(self, src):
-    self._parser.clear()
-    self._parser.put_source("main", src)
-    self._parser.resolve_import("main", None, None)
-    exprs = self._parser.pallet()
-    last_expr_result = self._visitor._visit_exprs(self._ctx, exprs)
+    self._compiler.clear()
+    self._compiler.put_source("main%s" % self._suffix, src)
 
-    pkg = self._ctx.fully_qualified_package("main")
-    c = pkg.ctx()
+    pkg = self._compiler.resolve_import_path("main", reimport=True)
+    above = pkg.ctx().get_above()
 
-    above = c.get_above()
-    if isinstance(above, graph_function.RetvalBag):
+    if isinstance(above, RetvalBag):
       above = above.get(None)
 
     if isinstance(above, (tf.Tensor, tf.Variable, tf.Operation)):
@@ -66,4 +58,9 @@ def run(parser):
       print()
       break
 
-    print(repl_session.run(src))
+    try:
+      result = repl_session.run(src)
+    except Exception as e:
+      result = e
+
+    print(result)
