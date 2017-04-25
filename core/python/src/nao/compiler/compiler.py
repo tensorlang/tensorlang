@@ -15,9 +15,10 @@ def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
 class Workspace:
-  def __init__(self, src_root, pkg_root):
+  def __init__(self, src_root, pkg_root, asset_root):
     self._src_root = src_root
     self._pkg_root = pkg_root
+    self._asset_root = asset_root
     self.clear()
 
   def clear(self):
@@ -37,6 +38,9 @@ class Workspace:
     with open(filepath) as f:
       return f.read()
 
+  def find_asset_path(self, name):
+    return path.join(self._asset_root, name)
+
   def find_pkg_path(self, filename):
     filepath = path.join(self._pkg_root, filename)
     if not path.exists(filepath):
@@ -44,9 +48,10 @@ class Workspace:
     return filepath
 
 class Compiler:
-  def __init__(self, src_root, pkg_root):
+  def __init__(self, src_root, pkg_root, asset_root):
     self._g = tf.Graph()
-    self._workspace = Workspace(src_root, pkg_root)
+    self._device = None
+    self._workspace = Workspace(src_root, pkg_root, asset_root)
     self._import_cache = {}
     self._import_cache_tags = {}
     self._compilers = [
@@ -63,15 +68,34 @@ class Compiler:
   def put_source(self, filename, source):
     self._workspace.put_src(filename, source)
 
+  def asset_path(self, name):
+    return self._workspace.find_asset_path(name)
+
+  def set_default_device(self, device):
+    self._device = device
+
   def new_session(self):
-    return tf.Session(graph=self._g)
+    config = tf.ConfigProto(
+      operation_timeout_in_ms=20000,
+      # allow_soft_placement=True,
+      # log_device_placement=True,
+    )
+
+    # Don't allocate everything we think we'll need ahead of time.
+    config.gpu_options.allow_growth = True
+
+    return tf.Session(
+      config=config,
+      graph=self._g,
+    )
 
   def meta_graph_def(self):
     meta_graph_def = None
     with self._g.as_default():
-      for compiler in self._compilers:
-        if hasattr(compiler, "finish"):
-          compiler.finish()
+      with tf.device(self._device):
+        for compiler in self._compilers:
+          if hasattr(compiler, "finish"):
+            compiler.finish()
 
       meta_graph_def, _ = meta_graph.export_scoped_meta_graph()
     return meta_graph_def
@@ -94,7 +118,8 @@ class Compiler:
       imports[imported_path] = self.resolve_import_path(imported_path, imported_tags)
 
     with self._g.as_default():
-      pkg = compile_fn(imports, pkg)
+      with tf.device(self._device):
+        pkg = compile_fn(imports, pkg)
 
     self._import_cache[import_path] = pkg
     self._import_cache_tags[import_path] = tags

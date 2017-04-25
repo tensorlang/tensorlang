@@ -32,7 +32,7 @@ PYTHON3 = sys.version_info.major == 3
 #Globals:
 DELIM = b"<IDS|MSG>"
 
-debug_level = 3 # 0 (none) to 3 (all) for various levels of detail
+debug_level = 1 # 0 (none) to 3 (all) for various levels of detail
 def dprint(level, *args, **kwargs):
   """ Show debug information """
   if level <= debug_level:
@@ -148,24 +148,19 @@ class ShellHandler:
     self._engine_id = engine_id
     self._iopub = iopub
     self._shell = shell
-    self._pending = set()
     self._execution_count = 1
+    self._pending_execute_requests = []
+    self._pending_execute_request = False
 
-  def _begin(self, identities, msg):
+  def _begin(self, identities, msg, on_done):
     execution_count = self._execution_count
     started = datetime.datetime.now().isoformat()
     parent_header = msg['header']
     code = msg['content']["code"]
 
+    self._iopub.send('status', {'execution_state': "busy"}, parent_header=parent_header)
+
     self._execution_count += 1
-    self._pending.add(execution_count)
-
-    if len(self._pending) > 0:
-      content = {
-        'execution_state': "busy",
-      }
-      self._iopub.send('status', content, parent_header=parent_header)
-
     content = {
       'execution_count': execution_count,
       'code': code,
@@ -173,10 +168,10 @@ class ShellHandler:
     self._iopub.send('execute_input', content, parent_header=parent_header)
 
     def _done(result_data, result_metadata=None):
-      self._pending.remove(execution_count)
-
       if result_metadata is None:
         result_metadata = {}
+
+      self._iopub.send('status', {'execution_state': "idle"}, parent_header=parent_header)
 
       content = {
         'execution_count': execution_count,
@@ -184,12 +179,6 @@ class ShellHandler:
         'metadata': result_metadata
       }
       self._iopub.send('execute_result', content, parent_header=parent_header)
-
-      if len(self._pending) == 0:
-        content = {
-          'execution_state': "idle",
-        }
-        self._iopub.send('status', content, parent_header=parent_header)
 
       metadata = {
         "dependencies_met": True,
@@ -207,10 +196,46 @@ class ShellHandler:
       self._shell.send('execute_reply', content, metadata=metadata,
         parent_header=parent_header, identities=identities)
 
+      on_done()
+
     return _done
 
   def execute_request(self, identities, msg):
+    def schedule_next():
+      print("schedule_next", self._pending_execute_request, self._pending_execute_requests)
+
+      if len(self._pending_execute_requests) == 0:
+        self._pending_execute_request = False
+      else:
+        identities2, msg2 = self._pending_execute_requests.pop(0)
+        self._execute_request(schedule_next, identities2, msg2)
+
+    if self._pending_execute_request:
+      self._pending_execute_requests.append((identities, msg))
+    else:
+      self._execute_request(schedule_next, identities, msg)
+
+
+  def _execute_request(self, on_done, identities, msg):
+    on_result = self._begin(identities, msg, on_done)
+
     code = msg['content']["code"]
+
+    has_displayed = set()
+    def on_display(display_id, data, metadata):
+      content = {
+        "data": data,
+        "metadata": metadata,
+        "transient": {
+          "display_id": display_id,
+        },
+      }
+
+      display_message_type = 'update_display_data'
+      if display_id not in has_displayed:
+        display_message_type = 'display_data'
+        has_displayed.add(display_id)
+      self._iopub.send(display_message_type, content, parent_header=msg['header'])
 
     def on_stdout(text):
       content = {
@@ -219,7 +244,7 @@ class ShellHandler:
       }
       self._iopub.send('stream', content, parent_header=msg['header'])
 
-    self._driver(code, on_stdout, self._begin(identities, msg))
+    self._driver(code, on_stdout, on_display, on_result)
 
   def kernel_info_request(self, identities, msg):
     content = {}

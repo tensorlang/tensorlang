@@ -56,7 +56,7 @@ def _while_fix_context_scope(meta_graph_def, import_scope):
     # eprint("while_context_def", while_context_def, while_context_def.SerializeToString())
     wc_values[wcd_ix] = while_context_def.SerializeToString()
 
-def _while_fix_colocations(meta_graph_def, input_map):
+def _while_fix_colocations(meta_graph_def, proxy_cruft):
   graph_def = meta_graph_def.graph_def
   for node in graph_def.node:
     # Rewrite the colocation attributes in the graph, since the
@@ -70,33 +70,40 @@ def _while_fix_colocations(meta_graph_def, input_map):
         class_value = class_values[ix]
         if class_value.startswith(b'loc:@'):
           op_name = class_value[5:].decode()
-          if not op_name in input_map:
-            # eprint("Skipping replacement of", op_name)
+          if op_name not in proxy_cruft and "%s:0" % op_name not in proxy_cruft:
+            # eprint("Skipping replacement of", op_name, "not in", list(proxy_cruft))
             continue
-          # replacement_name = input_map[op_name].name
+          # replacement_name = proxy_cruft[op_name].name
           # replacement = compat.as_bytes("loc:@" + replacement_name)
           # eprint("Replacing", class_value, "with", replacement)
           # class_values[ix] = replacement
           # HACK(adamb) It would be much, much better to just do the replacement
           #     commented out above, but we apparently can't replace a location
           #     with a value pointing to the existing graph. Strange.
-          eprint("HACK(adamb) Removing", class_value)
+          eprint("HACK(adamb) Removing", class_value, "for op_name", op_name, "node name", node.name)
           del class_values[ix]
 
-def _sf_while_inner(visitor_class, ctx, exprs):
+def _sf_while_inner(use_device, visitor_class, ctx, exprs):
   with tf.Graph().as_default() as g:
-    visitor = visitor_class()
-    final_tensor = visitor._visit_exprs(ctx, exprs)
+    with tf.device(use_device):
+      visitor = visitor_class()
+      final_tensor = visitor._visit_exprs(ctx, exprs)
 
-    # We do not want to include shapes, since inferred shapes will cause problems
-    # for shape inference upon import and re-export.
-    graph_def = g.as_graph_def()
-    return (
-      tf.train.export_meta_graph(graph=g, graph_def=graph_def),
-      unwrap_bag(final_tensor).name
-    )
+      # We do not want to include shapes, since inferred shapes will cause problems
+      # for shape inference upon import and re-export.
 
-def _sf_while_embed(import_scope, input_map, retval_names, meta_graph_def):
+      # HACK(adamb) Since TensorFlow uses __del__ to clean up py_funcs, we need to copy them.
+      cleanup_py_funcs_used_in_graph = []
+      if hasattr(g, "_cleanup_py_funcs_used_in_graph"):
+        cleanup_py_funcs_used_in_graph = g._cleanup_py_funcs_used_in_graph[:]
+
+      return (
+        tf.train.export_meta_graph(),
+        cleanup_py_funcs_used_in_graph,
+        unwrap_bag(final_tensor).name
+      )
+
+def _sf_while_embed(import_scope, input_map, retval_names, meta_graph_def, cleanup_py_funcs):
   g = tf.get_default_graph()
 
   try:
@@ -112,6 +119,11 @@ def _sf_while_embed(import_scope, input_map, retval_names, meta_graph_def):
         except ValueError as ve:
           # HACK(adamb) We don't want to error on unused input_map values.
           pass
+
+    if not hasattr(g, "_cleanup_py_funcs_used_in_graph"):
+      g._cleanup_py_funcs_used_in_graph = []
+
+    g._cleanup_py_funcs_used_in_graph.extend(cleanup_py_funcs)
 
     # eprint("have graph", import_scope, g.as_graph_def(add_shapes=True))
 
@@ -139,29 +151,24 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
 
   # track replacements. focus on external entity to internal name.
   def proxy(v):
-    eprint("proxy", v)
+    # eprint("proxy", v)
 
     if isinstance(v, RetvalBag):
       if v.graph is None:
-        eprint("no graph for RetvalBag")
         return v
 
       if v.graph == tf.get_default_graph():
-        eprint("graph is same as current default graph for RetvalBag")
         return v
 
       return v.wrap(proxy)
 
     if not isinstance(v, (tf.Operation, tf.Tensor, tf.Variable)):
-      eprint("not a tensor or op")
       return v
 
     if v.graph == tf.get_default_graph():
-      eprint("not a tensor or op from a different graph")
       return v
 
     if v.name in proxied_placeholders:
-      eprint("have cached placeholder")
       return proxied_placeholders[v.name]
 
     if v.name in proxied_placeholder_names:
@@ -174,8 +181,6 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
       with tf.control_dependencies(None):
         p_name = None
         if isinstance(v, tf.Tensor) and v.dtype._is_ref_dtype:
-          # eprint("creating ref proxy for", v)
-
           p = tf.Variable(
               initial_value=zero_value_for_dtype(v.dtype),
               trainable=False,
@@ -216,38 +221,47 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
     proxied_placeholders[v.name] = p
     proxied_placeholder_names[v.name] = p_name
 
-    eprint("creating proxy placeholder for", visitor, v.graph, p.name, p, v)
-
     if placeholder_name and placeholder_name != p.op.name:
       raise Exception("Created placeholder with unexpected name: %s vs %s" % (placeholder_name, p.op.name))
 
     return p
+
+  g = tf.get_default_graph()
+  while_loop_name = g.unique_name("while", False)
 
   # eprint('init_exprs', init_exprs)
   initial_value_ctx = ctx.subcontext()
   initial_value_ctx._proxy = proxy
   initial_tensor_list = None
   initial_local_names = None
-  with tf.variable_scope('while/init'):
+  with tf.variable_scope('%s_init' % while_loop_name):
     initial_tensor_list = [unwrap_bag(visitor.visit(initial_value_ctx, expr)) for expr in init_exprs]
     initial_local_names = [define[1] for define in init_exprs]
 
   local_name_by_tensor_name = dict(zip([t.name for t in initial_tensor_list], initial_local_names))
 
+  device_stack = g._device_function_stack
+  use_device = None
+  if len(device_stack) > 0:
+    use_device = device_stack[-1]
+
+  eprint("Will use device", use_device)
+
   # Ensure we have a placeholder for every initial value.
   with tf.Graph().as_default():
-    for local_name in initial_local_names:
-      initial_value_ctx.get_local(local_name)
+    with tf.device(use_device):
+      for local_name in initial_local_names:
+        initial_value_ctx.get_local(local_name)
 
   # Don't let cached placeholders from init_exprs infect our graph.
   proxied_placeholders = OrderedDict()
   cond_ctx = initial_value_ctx.subcontext()
-  cond_meta_graph_def, cond_retval_name = _sf_while_inner(type(visitor), cond_ctx, [cond_expr])
+  cond_meta_graph_def, cond_cleanup_funcs, cond_retval_name = _sf_while_inner(use_device, type(visitor), cond_ctx, [cond_expr])
 
   # Don't let cached placeholders from cond_exprs infect our graph.
   proxied_placeholders = OrderedDict()
   body_ctx = initial_value_ctx.subcontext()
-  body_meta_graph_def, _ = _sf_while_inner(type(visitor), body_ctx, body_exprs)
+  body_meta_graph_def, body_cleanup_funcs, _ = _sf_while_inner(use_device, type(visitor), body_ctx, body_exprs)
 
   # HACK(adamb) Don't actually import any nodes that are only proxies.
   #     This should probably be done automatically by the TF import
@@ -262,7 +276,6 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
   body_retval_names = []
   next_value_ixs = []
 
-  g = tf.get_default_graph()
   loop_vars = [g.get_tensor_by_name(v_name) for v_name in proxied_placeholder_names.keys()]
 
   ix = -1
@@ -284,17 +297,15 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
       # eprint("while next vals t.name", ix, t.name)
       pass
 
-  eprint("while initial_local_names", initial_local_names)
-  eprint("while initial_tensor_list", initial_tensor_list)
-  eprint("while proxied_placeholder_names", proxied_placeholder_names)
-  eprint("while local_name_by_tensor_name", local_name_by_tensor_name)
+  # eprint("while initial_local_names", initial_local_names)
+  # eprint("while initial_tensor_list", initial_tensor_list)
+  # eprint("while proxied_placeholder_names", proxied_placeholder_names)
+  # eprint("while local_name_by_tensor_name", local_name_by_tensor_name)
 
   def cond(*a):
     # We use a variable_scope because name_scope has a strange
     # only-sometimes-present trailing / that messes with everything.
-    with tf.variable_scope('while/cond') as import_scope:
-      pass
-    cond_import_scope = import_scope.name
+    cond_import_scope = '%s_cond' % while_loop_name
 
     _while_fix_context_scope(cond_meta_graph_def, cond_import_scope)
 
@@ -302,7 +313,8 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
         cond_import_scope,
         dict(zip(proxied_placeholder_names.values(), a)),
         [cond_retval_name],
-        cond_meta_graph_def)[0]
+        cond_meta_graph_def,
+        cond_cleanup_funcs)[0]
 
   def body(*a):
     body_input_map = dict(zip(proxied_placeholder_names.values(), a))
@@ -310,9 +322,7 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
 
     # We use a variable_scope because name_scope has a strange
     # only-sometimes-present trailing / that messes with everything.
-    with tf.variable_scope('while/body') as import_scope:
-      pass
-    body_import_scope = import_scope.name
+    body_import_scope = '%s_body' % while_loop_name
 
     _while_fix_context_scope(body_meta_graph_def, body_import_scope)
 
@@ -320,7 +330,8 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
         body_import_scope,
         body_input_map,
         body_retval_names,
-        body_meta_graph_def)
+        body_meta_graph_def,
+        body_cleanup_funcs)
 
     body_results = list(a)
     for ix, val in zip(next_value_ixs, next_values):
@@ -343,6 +354,7 @@ def _sf_while_loop(visitor, ctx, cond_expr, body_exprs, body_retvals, init_exprs
     loop_vars=loop_vars,
     parallel_iterations=1,
     back_prop=False,
+    name=while_loop_name.split("/")[-1],
   )
 
   if type(results) != list:

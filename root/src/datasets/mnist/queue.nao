@@ -8,8 +8,7 @@ import (
   testingLabels  "http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz" "asset,sha256:f7ae60f92e00ec6debd23a6088c31dbd2371eca3ffa0defaefb259924204aec6"
 )
 
-func loadDataQueue[capacity](imagesFile, labelsFile) {
-  // Make new queue, add mnist data to it.
+func loadDataQueue[capacity](allImages, allLabels) {
   let q = tf.RandomShuffleQueue[
     capacity: capacity,
     min_after_dequeue: 0,
@@ -17,20 +16,23 @@ func loadDataQueue[capacity](imagesFile, labelsFile) {
     shapes: {<10>, <784>},
   ]()
 
-  // Load images file
-  mnistFormat.ReadImages(imagesFile) -- allImages
-  mnistFormat.ReadLabels(labelsFile) -- allLabels
   nao.enqueue_many(q:queue_ref, {allLabels, allImages})
 
   emit ref = after __leaves { tf.identity(q:queue_ref) }
 }
 
+let testingImageData = tf.reshape(mnistFormat.ReadImages(testingImages), {10000, 784})
+let testingLabelData = tf.reshape(mnistFormat.ReadLabels(testingLabels), {10000, 10})
+
 func ForTesting() {
-  let r = loadDataQueue[capacity: 10000](testingImages, testingLabels)
+  let r = loadDataQueue[capacity: 10000](testingImageData, testingLabelData)
   emit ref = r
 }
 
+let trainingImageData = tf.reshape(mnistFormat.ReadImages(trainingImages), {60000, 784})
+let trainingLabelData = tf.reshape(mnistFormat.ReadLabels(trainingLabels), {60000, 10})
+
 func ForTraining() {
-  let r = loadDataQueue[capacity: 60000](trainingImages, trainingLabels)
+  let r = loadDataQueue[capacity: 60000](trainingImageData, trainingLabelData)
   emit ref = r
 }

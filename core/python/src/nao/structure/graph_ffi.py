@@ -41,6 +41,8 @@ class PythonImporter:
   def _dump_modules(self, fn_by_token_dict):
     modules = {}
     for token, fn in fn_by_token_dict.items():
+      if fn not in self._imported_functions:
+        continue
       module_name, fn_name = self._imported_functions[fn]
       # eprint("dumping %s -> (%s, %s)" % (fn, module_name, fn_name))
       if module_name not in modules:

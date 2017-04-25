@@ -410,6 +410,9 @@ export const help = {
 const name = 'Nao Play';
 app.setName(name);
 
+const icon = path.join(__dirname, '..', '..', 'build', 'icon.png');
+app.dock.setIcon(icon);
+
 export const named = {
   label: name,
   submenu: [

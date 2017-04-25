@@ -38,8 +38,7 @@ NaoRules {
 	    ) #sc
 
 	GraphElement = nl*
-	    ( InputDeclaration
-	    | VariableDeclaration
+	    ( VariableDeclaration
 	    | OutputDeclaration
 	    | VariableUpdate
 	    | LetAssignment
@@ -72,6 +71,7 @@ NaoRules {
 	  | int64
 	  | uint8
 	  | uint16
+	  | resource
 	  | string
 	  | bool
 	  | complex64
@@ -252,6 +252,7 @@ NaoRules {
 	int8 = "int8" ~identifierPart
 	int16 = "int16" ~identifierPart
 	int32 = "int32" ~identifierPart
+	resource = "resource" ~identifierPart
 	int64 = "int64" ~identifierPart
 	uint8 = "uint8" ~identifierPart
 	uint16 = "uint16" ~identifierPart

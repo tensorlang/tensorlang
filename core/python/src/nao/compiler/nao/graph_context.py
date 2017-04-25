@@ -2,6 +2,7 @@ import copy
 import sys
 
 import tensorflow as tf
+from tensorflow.python.ops import state_ops
 
 from collections import OrderedDict
 
@@ -77,10 +78,14 @@ class Context:
     self._delegate = delegate
     self._fully_qualified_packages = {}
     self._imported_packages = {}
+    self._wrap_locals_in_vars = False
     self._attrs = {}
     self._locals = {}
     self._leaves = set()
     self._above = None
+
+  def wrap_locals_in_vars(self):
+    self._wrap_locals_in_vars = True
 
   def duplicate_for(self, other):
     ctx = other.duplicate()
@@ -176,7 +181,35 @@ class Context:
   def define_local(self, name, value):
     if name in self._locals:
       raise Exception("Local already defined: %s" % name)
+
+    should_wrap_in_var = False
+    if self._wrap_locals_in_vars:
+      if isinstance(value, tf.Tensor):
+        should_wrap_in_var = True
+
+      # HACK(adamb) Unwrapping in here really isn't great, since auto-unwrapping can create unexpected behavior.
+      if isinstance(value, RetvalBag) and value.len() == 1:
+        if isinstance(value.get(None), tf.Tensor):
+          should_wrap_in_var = True
+          value = value.get(None)
+
+    if should_wrap_in_var:
+      variable = state_ops.variable_op_v2(
+          value.get_shape(),
+          value.dtype.base_dtype)
+
+      with tf.control_dependencies(None):
+        value = tf.identity(
+          tf.cond(
+            tf.is_variable_initialized(variable),
+            lambda: variable,
+            lambda: tf.assign(variable, value)
+          )
+        )
+      print("value", value)
+
     self._locals[name] = value
+    return value
 
   def has_attr(self, name):
     return name in self._attrs

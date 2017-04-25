@@ -17,14 +17,13 @@ import gc
 from os import path
 
 from nao.compiler.compiler import Compiler
+from nao.compiler.asset import graph_assets
 
-from nao.structure import graph_assets
 from nao.structure import graph_io
 from nao.structure import graph_query
 from nao.structure import graph_xform
 from nao.run import graph_execution
 from nao.tool import graph_repl
-from nao.tool import assets as nao_assets
 
 import tensorflow as tf
 from tensorflow.python.framework import meta_graph
@@ -38,21 +37,6 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 pp = pprint.PrettyPrinter(indent=2, stream=sys.stderr).pprint
-
-def parse_packages(src_root, pkg_root, package_names):
-  p = Compiler(src_root, pkg_root)
-
-  for package_name in package_names:
-    p.resolve_import_path(package_name)
-
-  return p.meta_graph_def()
-
-def parse_source(src_root, pkg_root, package_name, source):
-  p = Compiler(src_root, pkg_root)
-  p.put_source(package_name + ".nao", source)
-  p.resolve_import_path(package_name)
-
-  return p.meta_graph_def()
 
 def main():
   parser = argparse.ArgumentParser()
@@ -186,21 +170,48 @@ def main():
   if FLAGS.tensorboard is None:
     FLAGS.tensorboard = "127.0.0.1:6006"
 
+  def log_dir_fn_fn(pkg_names):
+    if FLAGS.log_dir:
+      return lambda: FLAGS.log_dir
+
+    session_name = datetime.datetime.utcnow().strftime("%F_%H-%M-%S")
+    base_log_dir = path.join(FLAGS.log_root, pkg_names[0], session_name)
+    def log_dir_fn(run_id=None):
+      log_dir = base_log_dir
+      if run_id is not None:
+        log_dir = path.join(log_dir, "%04d" % run_id)
+      return log_dir
+
+    return log_dir_fn
+
+  def new_compiler():
+    return Compiler(
+        FLAGS.root,
+        FLAGS.output_root,
+        FLAGS.assets_root)
+
   meta_graph_def = None
 
   output_package_names = None
 
   if should_parse:
+    p = new_compiler()
     if FLAGS.source:
-      package_names = ["main"]
-      meta_graph_def = parse_source(FLAGS.root, FLAGS.output_root, package_names[0], FLAGS.source)
+      package_name = "main"
+      package_names = [package_name]
+      p.put_source(package_name + ".nao", source)
+      p.resolve_import_path(package_name)
     else:
       # Look for matching packages _train
       if FLAGS.train:
         output_package_names = package_names[:]
         package_names.extend([pkg + "_train" for pkg in package_names])
-      meta_graph_def = parse_packages(FLAGS.root, FLAGS.output_root, package_names)
 
+      for package_name in package_names:
+        p.resolve_import_path(package_name)
+
+    meta_graph_def = p.meta_graph_def()
+    p = None
     # print("parsed", expressions)
     # We need to do this so we clean up references to py_funcs. LAME.
     gc.collect()
@@ -267,8 +278,8 @@ def main():
         'transport'         : 'tcp'
       }
 
-    pallet_parser = Compiler(FLAGS.root, FLAGS.output_root)
-    repl_session = graph_repl.ReplSession(pallet_parser)
+    pallet_parser = new_compiler()
+    repl_session = graph_repl.ReplSession(pallet_parser, log_dir_fn_fn(["jupyter"]))
     driver = jupyter_kernel_driver.Driver(repl_session)
     sys.exit(jupyter_kernel.Kernel(jupyter_config, driver.info(), driver.do).run())
 
@@ -306,18 +317,10 @@ def main():
         raise Exception("Missing assets: %s" % missing_assets)
 
       for asset_path, asset in missing_assets.items():
-        nao_assets.maybe_download(asset_path, asset["url"])
+        graph_assets.maybe_download(asset_path, asset["url"])
 
     eprint("feed_dict", feed_dict)
     return feed_dict
-
-  def log_dir_fn(pkg_names):
-    if FLAGS.log_dir:
-      return FLAGS.log_dir
-
-    # HACK(adamb) Should parameterize this
-    run_name = datetime.datetime.utcnow().strftime("%F_%H-%M-%S")
-    return path.join(FLAGS.log_root, pkg_names[0], run_name)
 
   if FLAGS.train:
     def post_train(session, result_scope_prefixes):
@@ -345,7 +348,7 @@ def main():
       feed_dict_fn=feed_dict_fn,
       result_pattern=re.compile(FLAGS.train_result_pattern),
       finish_session_fn=post_train,
-      log_dir_fn=log_dir_fn,
+      log_dir_fn=lambda x: log_dir_fn(x)(),
     )
     meta_graph_def, _ = meta_graph.export_scoped_meta_graph()
 
@@ -353,7 +356,7 @@ def main():
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict_fn=feed_dict_fn,
-      log_dir_fn=log_dir_fn,
+      log_dir_fn=lambda x: log_dir_fn(x)(),
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
 
@@ -411,7 +414,7 @@ def main():
     results = graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict_fn=feed_dict_fn,
-      log_dir_fn=log_dir_fn,
+      log_dir_fn=lambda x: log_dir_fn(x)(),
       result_pattern=re.compile(FLAGS.run_result_pattern),
     )
 
@@ -423,7 +426,7 @@ def main():
     )
 
   if FLAGS.repl:
-    graph_repl.run(Compiler(FLAGS.root, FLAGS.output_root))
+    graph_repl.run(new_compiler(), log_dir_fn_fn(["repl"]))
 
 if __name__ == '__main__':
   try:

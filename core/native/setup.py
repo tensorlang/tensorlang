@@ -17,19 +17,19 @@ if sys.platform == "win32":
 external_dir = os.path.dirname(importlib.util.find_spec('external').origin)
 external_resources = [f for f in glob.glob(os.path.join(external_dir, '*')) if f != '__init__.py' and f != '__pycache__']
 
+print("sys.path", sys.path, file=sys.stderr)
+
 setup(
     name="nao",
     version="0.1",
     description="Programming language for large scale computational networks",
     options={
       "build_exe": {
+        "replace_paths": [("%s/" % p, "//") for p in sys.path],
         "bin_path_excludes": [
           "bazel-out/",
-          "/nix/store/jbilg3n3iwwggf0ca7zfjgbhgwmzwc2s-Libsystem-osx-10.11.6/",
-          "/nix/store/6pqkka39jnvc72yifpsbpdm6wqymfwqf-CF-osx-10.9.5/",
-          "/nix/store/d86m2phvszp7mc55722liw6zzlzb08fr-CF-osx-10.9.5/",
-          "/nix/store/ibx5gmwjnk2kxwgz3mvyvx2f953z5vgw-configd-osx-10.8.5/",
-          sys.prefix
+          *os.environ['CXFREEZE_BIN_PATH_EXCLUDES'].split(':'),
+          sys.prefix,
         ],
         "bin_excludes": [
         ],
@@ -44,22 +44,24 @@ setup(
           "pkg_resources._vendor.pyparsing",
           "numpy.core._methods",
           "numpy.lib.format",
+
           "tensorflow.contrib.framework.python.ops.gen_variable_ops",
           "tensorflow.contrib.layers.python.layers.utils",
-          "tensorflow.contrib.cudnn_rnn.python.ops._cudnn_rnn_ops",
-          "tensorflow.contrib.factorization.python.ops._clustering_ops",
-          "tensorflow.contrib.factorization.python.ops._factorization_ops",
-          "tensorflow.contrib.framework.python.ops._variable_ops",
-          "tensorflow.contrib.image.python.ops._image_ops",
-          "tensorflow.contrib.input_pipeline.python.ops._input_pipeline_ops",
-          "tensorflow.contrib.layers.python.ops._bucketization_op",
-          "tensorflow.contrib.layers.python.ops._sparse_feature_cross_op",
-          "tensorflow.contrib.nccl.python.ops._nccl_ops",
-          "tensorflow.contrib.rnn.python.ops._gru_ops",
-          "tensorflow.contrib.rnn.python.ops._lstm_ops",
-          "tensorflow.contrib.tensor_forest.python.ops._tensor_forest_ops",
-          "tensorflow.contrib.ffmpeg.ffmpeg",
-          "tensorflow.contrib.tensor_forest.hybrid.python.ops._training_ops",
+
+        #   "tensorflow.contrib.cudnn_rnn.python.ops._cudnn_rnn_ops",
+        #   "tensorflow.contrib.factorization.python.ops._clustering_ops",
+        #   "tensorflow.contrib.factorization.python.ops._factorization_ops",
+        #   "tensorflow.contrib.ffmpeg.ffmpeg",
+        #   "tensorflow.contrib.framework.python.ops._variable_ops",
+        #   "tensorflow.contrib.image.python.ops._image_ops",
+        #   "tensorflow.contrib.input_pipeline.python.ops._input_pipeline_ops",
+        #   "tensorflow.contrib.layers.python.ops._bucketization_op",
+        #   "tensorflow.contrib.layers.python.ops._sparse_feature_cross_op",
+        #   "tensorflow.contrib.nccl.python.ops._nccl_ops",
+        #   "tensorflow.contrib.rnn.python.ops._gru_ops",
+        #   "tensorflow.contrib.rnn.python.ops._lstm_ops",
+        #   "tensorflow.contrib.tensor_forest.hybrid.python.ops._training_ops",
+        #   "tensorflow.contrib.tensor_forest.python.ops._tensor_forest_ops",
           "tensorflow"
         ],
         "include_files": [
@@ -75,5 +77,6 @@ setup(
       Executable(
           "%s/nao__init__.py" % os.path.dirname(__file__),
           base=base,
+          initScript="%s/initscript.py" % os.path.realpath(os.path.dirname(__file__)),
           targetName="nao")
     ])

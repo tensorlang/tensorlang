@@ -1,5 +1,23 @@
 import (
   lenet5 "models/lenet5"
+  summary       "tensorflow:summary"
+  tfNn          "tensorflow:nn"
+  log           "log"
 )
 
 let Classify = lenet5.New[]
+
+func Loss(prediction float, label double <?,10>, step int32) {
+  prediction
+  tfNn.softmax_cross_entropy_with_logits(logits: ^, labels: label) -- xEntropy
+  tf.reduce_mean(xEntropy)
+  summary.scalar(^) -- crossEntropy
+  log.LogWithStep(^, step)
+
+  tf.argmax(prediction, 1) == tf.argmax(label, 1) -- correct_prediction
+  tf.reduce_mean(tf.cast(^, tf.float32))
+  summary.scalar(^) -- accuracy
+  log.LogWithStep(^, step)
+
+  emit w = after __leaves { tf.reduce_mean(xEntropy) }
+}

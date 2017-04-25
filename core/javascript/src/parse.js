@@ -187,7 +187,6 @@ function rewriteExpressionWithName(name: string, expr: any[]): any[] {
     return rewriteExpressionWithName(name, identityExpr(expr));
 
   case "_named_tensor":
-  case "_sf_macro":
   case "_named_apply":
   case "_named_apply_keywords":
     expr[1] = name;
@@ -698,9 +697,6 @@ function createSemantics(grammar) {
       },
       AttributeEntry: function(name, _, value) {
         return [name.asJson, value.asJson];
-      },
-      InputDeclaration: function(_, name, kind) {
-        return ["_named_placeholder", name.asJson, kind.asJson[1], kind.asJson[2]];
       },
       OutputDeclaration: function(_1, name, type, shape, _2, expr) {
         var rhsValue = expr.asJson[0];

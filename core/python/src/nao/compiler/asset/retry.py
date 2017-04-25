@@ -23,10 +23,8 @@ import random
 import time
 
 from os import path
-from six.moves import urllib
-from tensorflow.python.platform import gfile
 
-def _retry(initial_delay,
+def retry(initial_delay,
           max_delay,
           factor=2.0,
           jitter=0.25,
@@ -76,37 +74,3 @@ def _retry(initial_delay,
       return fn(*args, **kwargs)
     return wrapped_fn
   return wrap
-
-
-_RETRIABLE_ERRNOS = {
-    110,  # Connection timed out [socket.py]
-}
-
-
-def _is_retriable(e):
-  return isinstance(e, IOError) and e.errno in _RETRIABLE_ERRNOS
-
-@_retry(initial_delay=1.0, max_delay=16.0, is_retriable=_is_retriable)
-def _urlretrieve_with_retry(url, filename=None):
-  return urllib.request.urlretrieve(url, filename)
-
-def maybe_download(filepath, source_url):
-  """Download the data from source url, unless it's already here.
-  Args:
-      basename: string, name of the file in the directory.
-      target_dir: string, path to working directory.
-      source_url: url to download from if file doesn't exist.
-  Returns:
-      Path to resulting file.
-  """
-  target_dir = path.dirname(filepath)
-  if not gfile.Exists(target_dir):
-    gfile.MakeDirs(target_dir)
-  if not gfile.Exists(filepath):
-    print('Downloading', source_url, 'to', filepath)
-    temp_file_name, _ = _urlretrieve_with_retry(source_url)
-    gfile.Copy(temp_file_name, filepath)
-    with gfile.GFile(filepath) as f:
-      size = f.size()
-    print('Successfully downloaded', filepath, size, 'bytes.')
-  return filepath

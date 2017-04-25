@@ -1,0 +1,13 @@
+import (
+  try          "demo/digits_try"
+  digits       "demo/digits_trained:demo/digits"
+)
+
+func Main() {
+  // import try "demo/digits_try"
+  // try.Main()
+  let fn = digits.Classify
+  try.Try[fn: fn]()
+
+  ← result = after __leaves { 1 }
+}

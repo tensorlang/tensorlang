@@ -54,15 +54,20 @@ export function launchNotebookFromFile(filename) {
 }
 launchIpynb = launchNotebookFromFile;
 
+const coreDir = "/Users/adamb/github/ajbouh/nao/core";
 const defaultKernelSpec = {
   name: 'nao',
   spec: {
     argv: [
-      "/Users/adamb/github/ajbouh/nao/core/build/exe.macosx-10.6-x86_64-3.5/bin/nao",
+      "/usr/bin/env",
+      "PYTHONFAULTHANDLER=true",
+      `PYTHONPATH=${coreDir}/python/src/:${coreDir}/build/tf-cpu/lib/python3.5/site-packages/`,
+      `${coreDir}/build/venv/bin/python`, "-m", "nao.cli",
+      // "/Users/adamb/github/ajbouh/nao/core/build/exe.macosx-10.6-x86_64-3.5/bin/nao",
       "--reopen-stderr", "/Users/adamb/debug.log",
       "--reopen-stdout", "/Users/adamb/debug.log",
       "--jupyter-kernel",
-      '{connection_file}'
+      '{connection_file}',
     ],
     display_name: 'Nao',
     language: 'nao'

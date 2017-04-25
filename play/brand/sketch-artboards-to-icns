@@ -37,6 +37,9 @@ make_icns() {
     mv $existing $iconset_dir/${existing/#${base}_/icon_}
   done
 
+  # Copy to just a png, for cross-platform needs.
+  cp $iconset_dir/icon_512x512@2x.png ${icns_dst/%.icns/.png}
+
   cd $iconset_dir
   base_png=icon_512x512@2x.png
   lazy_resize $base_png 16 16 icon_16x16.png

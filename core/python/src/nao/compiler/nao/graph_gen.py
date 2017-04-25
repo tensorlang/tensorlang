@@ -121,6 +121,7 @@ class TopLevel:
 	  "int64": tf.int64,
 	  "uint8": tf.uint8,
 	  "uint16": tf.uint16,
+	  "resource": tf.resource,
 	  "string": tf.string,
 	  "bool": tf.bool,
 	  "complex64": tf.complex64,
@@ -154,8 +155,7 @@ class TopLevel:
     return float(decimal)
 
   def _named_define_local(self, ctx, name, value):
-    ctx.define_local(name, value)
-    return value
+    return ctx.define_local(name, value)
 
   def _named_define_attr(self, ctx, name, value):
     ctx.define_attr(name, value)
@@ -171,13 +171,8 @@ class TopLevel:
     ctx.possible_leaf(op)
 
     if name != None:
-      ctx.define_local(name, op)
+      return ctx.define_local(name, op)
 
-    return op
-
-  def _named_placeholder(self, ctx, name, shape, dtype):
-    op = tf.placeholder(dtype, shape=shape, name=name)
-    ctx.define_local(name, op)
     return op
 
   def __named_apply_prep(self, ctx, name, fn, attrs, do_apply):
@@ -206,7 +201,7 @@ class TopLevel:
     ctx.possible_leaf(result)
 
     if name != None:
-      ctx.define_local(name, result)
+      result = ctx.define_local(name, result)
 
       # HACK(adamb) The tf.identity call below just demands that the result is a Tensor.
       if isinstance(result, RetvalBag) and result.len() == 1:
@@ -252,7 +247,7 @@ class TopLevel:
   # syntax, use leaves. Otherwise, use specific entries.
   def _sf_after_leaves(self, ctx, *exprs):
     leaves = ctx.leaves()
-    eprint("_sf_after_leaves", leaves)
+    # eprint("_sf_after_leaves", leaves)
     with tf.control_dependencies(list(leaves)):
       return self._visit_exprs(ctx, exprs)
 
@@ -314,7 +309,7 @@ class TopLevel:
         dtype=dtype)
     # eprint("named var", v, type(v))
 
-    ctx.define_local(name, v)
+    return ctx.define_local(name, v)
 
   def assert_type(self, ctx, dtype, val):
     # TODO(adamb) Actually check type
@@ -378,6 +373,10 @@ class TopLevel:
 
     fn = value
 
+    if fn.has_attrs():
+      eprint("has attributes, skipping.")
+      return
+
     g = tf.get_default_graph()
     var_collection_name = "%s:variable_names" % (g.unique_name(name, False))
     var_set = set()
@@ -425,6 +424,7 @@ class TopLevel:
       pkg = superctx.resolve_fully_qualified_package(name)
 
     ctx = pkg.ctx()
+    ctx.wrap_locals_in_vars()
     prev_local_items = ctx.local_items()
     prev_attr_items = ctx.attr_items()
 
@@ -446,7 +446,7 @@ class TopLevel:
 
         self._maybe_export_function(name, ctx, attr_name, attr_value)
 
-      eprint("%sctx: %s" % ('  ' * self.nesting_level, ctx))
+      # eprint("%sctx: %s" % ('  ' * self.nesting_level, ctx))
       return pkg
 
   def visit(self, ctx, expr):
@@ -469,7 +469,7 @@ class TopLevel:
 
   def _visit(self, ctx, expr):
     self.nesting_level = self.nesting_level + 1
-    eprint("%s%s" % ('  ' * self.nesting_level, expr))
+    # eprint("%s%s" % ('  ' * self.nesting_level, expr))
 
     if type(expr) == list:
       expr_type = expr[0]
@@ -480,13 +480,13 @@ class TopLevel:
       if expr_type.startswith("_sf_"): # Special form
         result = attr(ctx, *expr[1:])
       elif expr_type.startswith("_named_"): # name, then expressions
-        eprint("%sctx: %s" % ('  ' * self.nesting_level, ctx))
+        # eprint("%sctx: %s" % ('  ' * self.nesting_level, ctx))
         result = attr(ctx, expr[1], *[self.visit(ctx, subexpr) for subexpr in expr[2:]])
       else: # just expressions
         result = attr(ctx, *[self.visit(ctx, subexpr) for subexpr in expr[1:]])
 
       # eprint("visited %s expr %s => %s; ctx: %s" % (expr_type, expr, result, ctx))
-      eprint("%s=> %s" % ('  ' * self.nesting_level, result))
+    #   eprint("%s=> %s" % ('  ' * self.nesting_level, result))
       self.nesting_level = self.nesting_level - 1
       return result
     else:

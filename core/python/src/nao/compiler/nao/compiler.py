@@ -45,7 +45,7 @@ def make_compile_fn(workspace, import_path, tags):
     return None
 
   exprs = _js_ctx.call("parse.parseExpressions", source)
-  pp(exprs)
+  # pp(exprs)
 
   imported = []
   for imported_path, imported_tags in _enumerate_imports(exprs):

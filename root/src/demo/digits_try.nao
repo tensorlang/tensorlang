@@ -1,8 +1,8 @@
 import (
   log          "log"
+               "demo/digits"
   mnistQueue   "datasets/mnist/queue"
 
-  digits       "demo/digits_trained:demo/digits"
   summary      "tensorflow:summary"
 )
 
@@ -40,24 +40,31 @@ func logPredictions(images, predictions) {
   ← result = after __leaves { 1 }
 }
 
-func Main() {
-  let qRef = mnistQueue.ForTesting()
-
+func Try(qRef resource <>) {
   let batchSize = 100
 
   let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
   let labels = v:0
   tf.reshape(v:1, [-1, 28, 28, 1]) -- images
 
-  digits.Classify(^) -- predictions
+  digits.Classify(^)
   logPredictions(images, ^)
-
-  // Now log accuracy!
-  tf.argmax(predictions, 1) == tf.argmax(labels, 1) -- correct_prediction
-  tf.reduce_mean(tf.cast(^, tf.float32)) -- x
-  summary.scalar(^) -- accuracy
-  log.LogWithStep(^, 13)
-  log.Debug(x)
 
   ← result = after __leaves { 1 }
 }
+
+// func Try(qRef resource <>) {
+//   let batchSize = 100
+//
+//   let v = nao.dequeue_many[component_types: {tf.float64, tf.float32}](qRef, batchSize)
+//   let labels = v:0
+//   tf.reshape(v:1, [-1, 28, 28, 1]) -- images
+//
+//   digits.Classify(^) -- predictions
+//   logPredictions(images, ^)
+//
+//   tf.argmax(predictions, 1) == tf.argmax(labels, 1) -- correct_prediction
+//   let accuracy = after __leaves { tf.reduce_mean(tf.cast(^, tf.float32)) }
+//
+//   ← result = accuracy
+// }

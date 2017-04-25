@@ -75,7 +75,6 @@ class TransformedFunction:
     def var_reference(var):
       vars.append(var)
 
-    eprint("about to apply!")
     visitor.add_variable_listener(var_reference)
     try:
       retvals = impl()
@@ -142,7 +141,7 @@ class DeclaredMacro:
     for retval_name, retval_argname in self._retval_specs():
       returned[retval_name] = ctx.get_local(retval_argname)
 
-    eprint("returned", returned)
+    # eprint("returned", returned)
 
     return RetvalBag(returned)
 
@@ -212,6 +211,10 @@ class DeclaredFunction:
 
   def _body(self):
     return self._expr[4:]
+
+  def has_attrs(self):
+    attr_specs = self._attr_specs()
+    return attr_specs is not None and len(attr_specs) > 0
 
   # Update given attrs and return a new function.
   # (add separate data structure for tracking pre-specified and now unoverrideable values).

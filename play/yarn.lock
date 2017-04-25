@@ -1536,9 +1536,9 @@ electron-to-chromium@^1.1.0, electron-to-chromium@^1.2.5:
   version "1.2.6"
   resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.2.6.tgz#f38ad51d1919b06bc07275c62629db803ddca05a"
 
-electron@beta:
-  version "1.6.4"
-  resolved "https://registry.yarnpkg.com/electron/-/electron-1.6.4.tgz#ec8e5b5d8fe7dcc8fe8754beaca1eabc1d7163e9"
+electron@^1.6.5:
+  version "1.6.5"
+  resolved "https://registry.yarnpkg.com/electron/-/electron-1.6.5.tgz#6408d738025bc34f7c0ce8ee8827539475680a99"
   dependencies:
     electron-download "^3.0.1"
     extract-zip "^1.0.3"
@@ -4435,7 +4435,7 @@ yauzl@2.4.1:
   dependencies:
     fd-slicer "~1.0.1"
 
-zeromq@^4.0.0, zeromq@^4.2.0:
+zeromq@^4.0.0:
   version "4.2.0"
   resolved "https://registry.yarnpkg.com/zeromq/-/zeromq-4.2.0.tgz#e1133305df73c84f8c7df060a8e2b303b4c72d7f"
   dependencies:

@@ -4,6 +4,8 @@ from nao.structure import graph_query
 from nao.structure import graph_xform
 from nao.structure import graph_ffi
 
+from nao.run import graph_summary
+
 from tensorflow.python.framework import meta_graph
 
 import tensorflow as tf
@@ -23,18 +25,16 @@ def create_session():
 
   return tf.Session(config=config)
 
-_summary_writer = None
 def run_session(
     sess,
     result_pattern,
     feed_dict,
     log_dir_fn,
     finish_session_fn=None):
-  global _summary_writer
 
   prefixes, result_names, ops = graph_query.find_results(sess.graph, result_pattern)
   log_dir = log_dir_fn(prefixes)
-  _summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
+  graph_summary.set_summary_writer(tf.summary.FileWriter(log_dir, sess.graph))
 
   eprint(tf.GraphKeys.QUEUE_RUNNERS, tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS))
 
@@ -70,7 +70,7 @@ def run_session(
 
     coord.request_stop()
     coord.join(threads)
-    _summary_writer = None
+    graph_summary.set_summary_writer(None)
 
 from tensorflow.python.ops import script_ops
 
@@ -80,6 +80,7 @@ def import_and_run_meta_graph(
     feed_dict_fn,
     log_dir_fn,
     finish_session_fn=None):
+  # TODO(adamb) Carefully find the asset map and replace any asset py funcs appropriately with input_map.
   with create_session() as sess:
     try:
       meta_graph.import_scoped_meta_graph(
