@@ -74,7 +74,7 @@ squareAndMoreDx = grad[squareAndMore]
 ## Training and function optimization
 Since neural network is just a function composed of a many other functions, each with some internal state, we can use these these concepts to train networks! Rather than expecting a human to determine the internal weights of a network, we can discover acceptable values experimentally. This process of discovery is referred to as training. To train a function, we need some example input values and a way to determine how close the function's output is to an acceptable threshold. A function trainer uses symbolic differentiation along with rules about how to update hidden state of a function.
 
-[Check out the example of a simple MNIST classifier.](root/src/digits_np.ipynb)
+[Check out the example of a simple MNIST classifier.](root/src/demo/digits_nb.ipynb)
 
 ## Native loops
 Loops are hard to write using TensorFlow's Python API. But it doesn't have to be that way.
