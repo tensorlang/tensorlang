@@ -11,12 +11,12 @@ Based on experience with the existing tools, Tensorlang is designed to address a
 
 - Ability to saturate a single machine's local CPU and GPU with linear scaling
 - Seamless scaling to clusters of machines
-- Ability to compile programs to native code that runs without the program runtime on major operating systems and mobile devices
+- Ability to compile programs to native code that runs **fast** on major operating systems and mobile devices
 - Native support for symbolic differentiation
-- Easy debugging and stacktraces for errors
+- Easy debugging and actual stacktraces for graph errors
 - Execution model that matches other programming environments (e.g. no delayed execution)
 - A productive REPL environment
-- Compatibility with a majority of existing libraries and models
+- Compatibility with existing libraries and models
 
 In order to do this, we'll need to improve the state of the art on a number of dimensions:
 - Debugging
