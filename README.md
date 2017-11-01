@@ -1,4 +1,4 @@
-# Tensorlang, a powerful, easy to use language for machine learning that compiles to TensorFlow graphs
+# Tensorlang, a powerful, easy to use language for machine learning
 
 
 Our goal is to define a programming language for large-scale computational networks (e.g. deep neural nets) that is faster, more powerful, and enjoyable to use.
