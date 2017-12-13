@@ -167,4 +167,4 @@ func incrementerFactory[amount] {
 }
 ```
 
-As you can see above, the only difference between a function definition and a macro definition is the use of `()` to specify zero or more arguments. If the `()` are present in a definition, it's a funciton definition. If they're absent, it's a macro definition.
+As you can see above, the only difference between a function definition and a macro definition is the use of `()` to specify zero or more arguments. If the `()` are present in a definition, it's a function definition. If they're absent, it's a macro definition.
