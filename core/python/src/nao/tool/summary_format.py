@@ -1,5 +1,7 @@
 from collections import namedtuple
 
+import numpy as np
+
 from tensorflow.core.framework import summary_pb2
 from tensorflow.core.util import event_pb2
 
