@@ -2,8 +2,10 @@ import os
 import sys
 import subprocess
 
-if sys.version_info[0] < 3:
-    input = raw_input
+try:
+    input = raw_input  # Python 2
+except NameError:
+    pass               # Python 3
 
 class SetupWriter(object):
     bases = {
