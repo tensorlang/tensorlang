@@ -44,7 +44,7 @@ class ReplSession:
 
     print("new_queue_runners", new_queue_runners)
     for qr in new_queue_runners:
-      threads = qr.create_threads(sess, coord=self._coord, daemon=True, start=True)
+      threads = qr.create_threads(self._session, coord=self._coord, daemon=True, start=True)
       print("started", threads)
       self._threads.extend(threads)
 
