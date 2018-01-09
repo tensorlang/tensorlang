@@ -15,9 +15,10 @@ import warnings
 # the site module to the frozen executable
 __import__("site")
 
+FILE_NAME = sys.executable
+
 # now locate the pth file to modify the path appropriately
 baseName, ext = os.path.splitext(FILE_NAME)
 pathFileName = baseName + ".pth"
 sys.path = [s.strip() for s in open(pathFileName).read().splitlines()] + \
         sys.path
-
