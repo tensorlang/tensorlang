@@ -1,6 +1,7 @@
 import sys
 
 import tensorflow as tf
+from tensorflow.core.protobuf import control_flow_pb2
 
 from nao.compiler.retvalbag import RetvalBag, unwrap_bag
 
