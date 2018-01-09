@@ -11,7 +11,6 @@ from cx_Freeze.finder import *
 from cx_Freeze.freezer import *
 from cx_Freeze.main import *
 
-del dist
-del finder
-del freezer
-
+del dist    # noqa: F821 undefined name
+del finder  # noqa: F821 undefined name
+del freezer # noqa: F821 undefined name
