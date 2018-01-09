@@ -11,6 +11,8 @@ import os
 import sys
 import warnings
 
+DIR_NAME = os.path.dirname(sys.executable)
+
 if not hasattr(sys, "frozen"):
     sys.frozen = True
     sys.path = sys.path[:4]
