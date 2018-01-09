@@ -1,4 +1,5 @@
 import inspect
+from functools import partial
 
 class PrimitiveFunction:
   def __init__(self, fn, prepend_with_context=False):
