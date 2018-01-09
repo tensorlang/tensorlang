@@ -199,7 +199,7 @@ def main():
     if FLAGS.source:
       package_name = "main"
       package_names = [package_name]
-      p.put_source(package_name + ".nao", source)
+      p.put_source(package_name + ".nao", FLAGS.source)
       p.resolve_import_path(package_name)
     else:
       # Look for matching packages _train
