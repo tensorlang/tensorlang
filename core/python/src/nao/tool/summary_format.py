@@ -1,3 +1,5 @@
+# Taken from https://github.com/tensorflow/tensorboard/blob/master/tensorboard/backend/event_processing/event_accumulator.py
+
 from collections import namedtuple
 
 import numpy as np
@@ -79,10 +81,15 @@ def _ConvertHistogramProtoToTuple(histo):
     "bucket": list(histo.bucket),
   }
 
+## Normal CDF for std_devs: (-Inf, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, Inf)
+## naturally gives bands around median of width 1 std dev, 2 std dev, 3 std dev,
+## and then the long tail.
+NORMAL_HISTOGRAM_BPS = (0, 668, 1587, 3085, 5000, 6915, 8413, 9332, 10000)
+
 def _ParseHistogram(tag, wall_time, step, histo):
   histo = _ConvertHistogramProtoToTuple(histo)
   histo_ev = {"wall_time": wall_time, "step": step, "histogram_value": histo}
-  return [histo_ev, lambda x: _CompressHistogram(x, self._compression_bps)]
+  return [histo_ev, lambda x: _CompressHistogram(x, NORMAL_HISTOGRAM_BPS)]
 
 def _ParseImage(tag, wall_time, step, image):
   return {
