@@ -348,7 +348,7 @@ def main():
       feed_dict_fn=feed_dict_fn,
       result_pattern=re.compile(FLAGS.train_result_pattern),
       finish_session_fn=post_train,
-      log_dir_fn=lambda x: log_dir_fn(x)(),
+      log_dir_fn=lambda x: log_dir_fn_fn(x)(),
     )
     meta_graph_def, _ = meta_graph.export_scoped_meta_graph()
 
@@ -356,7 +356,7 @@ def main():
     graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict_fn=feed_dict_fn,
-      log_dir_fn=lambda x: log_dir_fn(x)(),
+      log_dir_fn=lambda x: log_dir_fn_fn(x)(),
       result_pattern=re.compile(FLAGS.test_result_pattern),
     )
 
@@ -414,7 +414,7 @@ def main():
     results = graph_execution.import_and_run_meta_graph(
       meta_graph_def=meta_graph_def,
       feed_dict_fn=feed_dict_fn,
-      log_dir_fn=lambda x: log_dir_fn(x)(),
+      log_dir_fn=lambda x: log_dir_fn_fn(x)(),
       result_pattern=re.compile(FLAGS.run_result_pattern),
     )
 
