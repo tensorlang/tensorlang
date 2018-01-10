@@ -1,7 +1,12 @@
 # Tensorlang, a differentiable programming language based on TensorFlow
 
+TensorFlow is an impressive runtime for doing machine learning research at massive scale. It has an interpreter, a JIT (called XLA), and an ahead of time compiler. It generates native code for processor architectures like ARM and amd64. It has fast kernels that run on the GPU and other specialized hardware. It runs on major operating including Linux, macOS, Windows, iOS and Android.
 
-Our goal is to define a programming language for large-scale computational networks (e.g. deep neural nets) that is faster, more powerful, and enjoyable to use.
+But the end-to-end usability (and in some cases, performance) of TensorFlow lags behind mainstream programming environments like Python. While there are a number of reasons for this, we believe a big one is that TensorFlow lacks a syntax of its own.
+
+Tensorlang is an effort to fill this gap. Tensorlang defines a set of syntax and semantics that provide access to the full performance and expressiveness of the TensorFlow runtime and toolchain.
+
+Once complete, Tensorlang will be a programming environment specially tuned for machine learning. This environment will at once be compatible with the existing machine learning ecosystem, and also be faster, more powerful, and more enjoyable to use than anything else out there.
 
 **NOTE** During early development, Tensorlang was code-named Nao (a pun on the Chinese word for brain). There are still many places that use this name that haven't yet been migrated over.
 
